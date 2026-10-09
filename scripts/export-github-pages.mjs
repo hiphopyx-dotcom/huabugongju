@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {createHash} from 'node:crypto';
 const root=process.cwd(),out=path.join(root,'pages');
 await fs.mkdir(out,{recursive:true});
 for(const name of ['index.html','style.css','core.mjs','db.mjs','app.mjs'])await fs.copyFile(path.join(root,'public/studio',name),path.join(out,name));
@@ -13,6 +14,9 @@ app=app.replace("本地项目使用 IndexedDB 保存；点击云保存后可跨�
 app=app.replace("<tr><td>账号身份 / 云端项目 / 素材存储 / 版本恢复</td><td>已接入网站后端</td></tr><tr><td>项目成员权限 / 评论审阅 / 保存冲突检查</td><td>已实现；协作采用保存与刷新</td></tr>","<tr><td>GitHub Pages / 图片任务管理</td><td>静态版已适配</td></tr><tr><td>云端账号 / 云存储 / 协作</td><td>GitHub Pages 不提供后端</td></tr>");
 app=app.replace("点击云保存；换设备在云端项目页恢复。也可导出完整 JSON 备份。", "导出完整项目 JSON 备份，换设备后导入恢复。");
 await fs.writeFile(path.join(out,'app.mjs'),app);
+const version=createHash('sha256').update(app).digest('hex').slice(0,12);
+const index=await fs.readFile(path.join(out,'index.html'),'utf8');
+await fs.writeFile(path.join(out,'index.html'),index.replace('src="app.mjs"',`src="app.mjs?v=${version}"`));
 await fs.writeFile(path.join(out,'cloud.mjs'),`const disabled=async()=>{throw Error('GitHub Pages 版没有云端后端。请使用本地项目备份与 图片生成面板。')};\nexport const me=disabled,list=disabled,save=disabled,load=disabled,versions=disabled,members=disabled,addMember=disabled,removeMember=disabled,comments=disabled,comment=disabled,resolveComment=disabled,remove=disabled;\n`);
 await fs.writeFile(path.join(out,'.nojekyll'),'');
 await fs.writeFile(path.join(out,'README.md'),`# 剧爆棚 GitHub Pages 版\n\n纯静态页面，直接部署本目录，不需要运行 Node 服务。\n本地项目、资产、分镜、画布、剪辑、字幕、浏览器 WebM 导出均保留。\nGrok 生成使用网页会员账号交接，不读登录 Cookie、不存账号密码、不冒充官方API。\n上传素材和剧本保留在浏览器，不会自动提交到 GitHub。\n`);
