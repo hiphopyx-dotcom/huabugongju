@@ -19,10 +19,10 @@ return json({user:cleanUser(u)},200,{'Set-Cookie':`__Host-jbp-session=${t}; Path
 if(op==='bootstrap'&&req.method==='POST'){
 await rate('bootstrap',5);const b=await read(req);const expected=hash(config.setupToken||''),actual=hash(String(b.setupToken||''));if(!config.setupToken||!timingSafeEqual(Buffer.from(expected),Buffer.from(actual)))throw new AccountError(403,'初始化密钥无效');
 if(await one("SELECT id FROM studio_accounts WHERE role='admin'"))throw new AccountError(409,'管理员已设置，不能重复初始化');
-const id=randomUUID();await q("INSERT INTO studio_accounts (id,phone,name,password_hash,role,created) VALUES ($1,$2,$3,$4,'admin',$5)",id,phone(b.phone),name(b.name),await hashPassword(b.password),now);return json({created:true},201);
+const id=randomUUID();await q("INSERT INTO studio_accounts (id,phone,name,password_hash,role,created) VALUES ($1,$2,$3,$4,'admin',$5)",id,phone(b.phone),name(b.name),await hashPassword(b.password),now);const t=token();await q('INSERT INTO studio_sessions (token_hash,user_id,version,expires) VALUES ($1,$2,$3,$4)',hash(t),id,1,now+7*86400000);return json({created:true,user:{id,name:name(b.name),phone:phone(b.phone),role:'admin',grokAccount:null}},201,{'Set-Cookie':`__Host-jbp-session=${t}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=604800`});
 }
 const raw=cookie(req);const u=raw?await one('SELECT a.*,g.label AS grok_label FROM studio_sessions s JOIN studio_accounts a ON a.id=s.user_id LEFT JOIN studio_grok_accounts g ON g.id=a.grok_account_id AND g.active=true WHERE s.token_hash=$1 AND s.expires>$2 AND a.active=true AND s.version=a.session_version',hash(raw),now):null;
-if(op==='me'&&req.method==='GET')return json({user:u?cleanUser(u):null,configured:true});
+if(op==='me'&&req.method==='GET')return json({user:u?cleanUser(u):null,configured:true,administratorConfigured:!!await one("SELECT id FROM studio_accounts WHERE role='admin'")});
 if(op==='logout'&&req.method==='POST'){if(raw)await q('DELETE FROM studio_sessions WHERE token_hash=$1',hash(raw));return json({loggedOut:true},200,{'Set-Cookie':'__Host-jbp-session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0'})}
 if(op==='modules'&&req.method==='GET')return json({modules:await q('SELECT id,name,url FROM studio_model_modules ORDER BY id')});
 requireAdmin(u);
