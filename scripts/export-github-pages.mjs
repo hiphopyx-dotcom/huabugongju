@@ -3,7 +3,7 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 const root=process.cwd(),out=path.join(root,'pages');
 await fs.mkdir(out,{recursive:true});
-for(const name of ['index.html','style.css','core.mjs','db.mjs','app.mjs'])await fs.copyFile(path.join(root,'public/studio',name),path.join(out,name));
+for(const name of ['index.html','style.css','core.mjs','db.mjs','app.mjs','accounts.mjs'])await fs.copyFile(path.join(root,'public/studio',name),path.join(out,name));
 let app=await fs.readFile(path.join(out,'app.mjs'),'utf8');
 app=app.replace("import * as Cloud from './cloud.mjs';", "import * as Cloud from './cloud.mjs';\nconst GITHUB_PAGES=true;");
 app=app.replace("['cloud','☁','云端项目'],", "");

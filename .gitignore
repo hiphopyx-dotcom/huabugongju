@@ -46,3 +46,6 @@ next-env.d.ts
 /work/
 
 *.tsbuildinfo
+
+/deploy/node_modules/
+/deploy/public/

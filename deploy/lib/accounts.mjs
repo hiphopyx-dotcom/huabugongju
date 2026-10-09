@@ -1,0 +1,38 @@
+import {AccountError,phone,name,password,hashPassword,verifyPassword,requireAdmin,hash,token,cookie,safeOrigin,moduleUrl} from './security.mjs';
+import {randomUUID,timingSafeEqual} from 'node:crypto';
+const json=(data,status=200,extra={})=>Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...extra}});
+const cleanUser=u=>({id:u.id,name:u.name,phone:u.phone,role:u.role,grokAccount:u.grok_label||null});
+async function read(req){const text=await req.text();if(text.length>16384)throw new AccountError(413,'请求过大');try{return JSON.parse(text)}catch{throw new AccountError(400,'请求格式错误')}}
+export function createAccountHandler(query,config={}){
+return async function handle(req){try{
+safeOrigin(req);const op=new URL(req.url).searchParams.get('action')||'me';const now=Date.now();
+const q=async(s,...p)=>query(s,p);const one=async(s,...p)=>(await q(s,...p))[0];
+const rate=async(key,max)=>{const row=await one('INSERT INTO studio_login_limits (key,attempts,until_ms) VALUES ($1,1,$2) ON CONFLICT(key) DO UPDATE SET attempts=CASE WHEN studio_login_limits.until_ms<$3 THEN 1 ELSE studio_login_limits.attempts+1 END, until_ms=CASE WHEN studio_login_limits.until_ms<$3 THEN $2 ELSE studio_login_limits.until_ms END RETURNING attempts',hash(key),now+15*60*1000,now);if(row.attempts>max)throw new AccountError(429,'尝试过多，请15分钟后再试')};
+if(op==='login'&&req.method==='POST'){
+const b=await read(req),p=phone(b.phone);await rate('phone:'+p,10);await rate('ip:'+(req.headers.get('x-vercel-forwarded-for')||req.headers.get('x-forwarded-for')||'unknown').split(',')[0],100);
+const u=await one('SELECT a.*,g.label AS grok_label FROM studio_accounts a LEFT JOIN studio_grok_accounts g ON g.id=a.grok_account_id AND g.active=true WHERE phone=$1',p);
+const dummy=config.dummyHash||await hashPassword('not-an-account-password');
+if(!await verifyPassword(b.password,u?.password_hash||dummy)||!u?.active)throw new AccountError(401,'手机号或密码错误，或账号已停用');
+const t=token();await q('INSERT INTO studio_sessions (token_hash,user_id,version,expires) VALUES ($1,$2,$3,$4)',hash(t),u.id,u.session_version,now+7*86400000);
+return json({user:cleanUser(u)},200,{'Set-Cookie':`__Host-jbp-session=${t}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=604800`});
+}
+if(op==='bootstrap'&&req.method==='POST'){
+await rate('bootstrap',5);const b=await read(req);const expected=hash(config.setupToken||''),actual=hash(String(b.setupToken||''));if(!config.setupToken||!timingSafeEqual(Buffer.from(expected),Buffer.from(actual)))throw new AccountError(403,'初始化密钥无效');
+if(await one("SELECT id FROM studio_accounts WHERE role='admin'"))throw new AccountError(409,'管理员已设置，不能重复初始化');
+const id=randomUUID();await q("INSERT INTO studio_accounts (id,phone,name,password_hash,role,created) VALUES ($1,$2,$3,$4,'admin',$5)",id,phone(b.phone),name(b.name),await hashPassword(b.password),now);return json({created:true},201);
+}
+const raw=cookie(req);const u=raw?await one('SELECT a.*,g.label AS grok_label FROM studio_sessions s JOIN studio_accounts a ON a.id=s.user_id LEFT JOIN studio_grok_accounts g ON g.id=a.grok_account_id AND g.active=true WHERE s.token_hash=$1 AND s.expires>$2 AND a.active=true AND s.version=a.session_version',hash(raw),now):null;
+if(op==='me'&&req.method==='GET')return json({user:u?cleanUser(u):null,configured:true});
+if(op==='logout'&&req.method==='POST'){if(raw)await q('DELETE FROM studio_sessions WHERE token_hash=$1',hash(raw));return json({loggedOut:true},200,{'Set-Cookie':'__Host-jbp-session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0'})}
+if(op==='modules'&&req.method==='GET')return json({modules:await q('SELECT id,name,url FROM studio_model_modules ORDER BY id')});
+requireAdmin(u);
+const audit=async(action,target)=>q('INSERT INTO studio_account_audit (id,actor,action,target,created) VALUES ($1,$2,$3,$4,$5)',randomUUID(),u.id,action,target,now);
+if(op==='grok-open'&&req.method==='GET')return new Response(null,{status:302,headers:{Location:'https://grok.com/imagine','Cache-Control':'no-store'}});
+if(op==='users'&&req.method==='GET')return json({users:await q('SELECT a.id,a.phone,a.name,a.role,a.active,a.grok_account_id,g.label AS grok_label FROM studio_accounts a LEFT JOIN studio_grok_accounts g ON g.id=a.grok_account_id ORDER BY a.created DESC'),grokAccounts:await q('SELECT id,label,active FROM studio_grok_accounts ORDER BY label')});
+if(op==='grok-accounts'&&req.method==='POST'){const b=await read(req),id=randomUUID();await q('INSERT INTO studio_grok_accounts (id,label) VALUES ($1,$2)',id,name(b.label));await audit('create-grok-label',id);return json({created:true},201)}
+if(op==='modules'&&req.method==='PUT'){const b=await read(req);if(!['script','white','image','storyboard'].includes(b.id))throw new AccountError(400,'模型类型无效');await q('INSERT INTO studio_model_modules (id,name,url,updated) VALUES ($1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET name=excluded.name,url=excluded.url,updated=excluded.updated',b.id,name(b.name),moduleUrl(b.url),now);await audit('configure-module',b.id);return json({saved:true})}
+if(op==='users'&&req.method==='POST'){const b=await read(req),id=randomUUID();const grok=b.grokAccountId||null;if(grok&&!await one('SELECT id FROM studio_grok_accounts WHERE id=$1 AND active=true',grok))throw new AccountError(400,'请选择有效的 Grok 账户');await q("INSERT INTO studio_accounts (id,phone,name,password_hash,role,grok_account_id,created) VALUES ($1,$2,$3,$4,'user',$5,$6)",id,phone(b.phone),name(b.name),await hashPassword(b.password),grok,now);await audit('create-user',id);return json({created:true},201)}
+if(op==='users'&&req.method==='PUT'){const b=await read(req),target=await one('SELECT * FROM studio_accounts WHERE id=$1',String(b.id));if(!target)throw new AccountError(404,'账户不存在');if(target.role==='admin')throw new AccountError(400,'此入口不能修改管理员');const grok=b.grokAccountId||null;if(grok&&!await one('SELECT id FROM studio_grok_accounts WHERE id=$1 AND active=true',grok))throw new AccountError(400,'请选择有效的 Grok 账户');const encoded=b.password?await hashPassword(password(b.password)):target.password_hash;await q('UPDATE studio_accounts SET name=$1,grok_account_id=$2,active=$3,password_hash=$4,session_version=session_version+1 WHERE id=$5',name(b.name),grok,b.active!==false,encoded,target.id);await audit('update-user',target.id);return json({saved:true})}
+throw new AccountError(404,'接口不存在');
+}catch(e){if(e.code==='23505')return json({error:'手机号、账户名称或管理员已存在'},409);if(!e.status)console.error('account-service',e.code||e.name);return json({error:e.status?e.message:'账户服务暂不可用'},e.status||503)}};
+}

@@ -1,3 +1,5 @@
-const open=new Promise((resolve,reject)=>{let req=indexedDB.open('jubaopeng-studio-v2',1);req.onupgradeneeded=()=>req.result.createObjectStore('projects',{keyPath:'id'});req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)});
+function connect(scope){return new Promise((resolve,reject)=>{let req=indexedDB.open(scope==='guest'?'jubaopeng-studio-v2':'jubaopeng-studio-account-'+scope,1);req.onupgradeneeded=()=>req.result.createObjectStore('projects',{keyPath:'id'});req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}
+let open=connect('guest');
+export async function setScope(scope){if(!/^[a-zA-Z0-9_-]{1,128}$/.test(scope))throw Error('账户标识无效');const old=await open;old.close();open=connect(scope);await open;}
 async function transaction(mode,fn){let db=await open;return new Promise((res,rej)=>{const tx=db.transaction('projects',mode),s=tx.objectStore('projects');let req=fn(s);tx.oncomplete=()=>res(req.result);tx.onerror=()=>rej(tx.error);tx.onabort=()=>rej(tx.error)})}
 export const get=id=>transaction('readonly',s=>s.get(id));export const list=()=>transaction('readonly',s=>s.getAll());export const put=p=>transaction('readwrite',s=>s.put(p));export const del=id=>transaction('readwrite',s=>s.delete(id));

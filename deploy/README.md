@@ -1,0 +1,17 @@
+# 剧爆棚账户服务
+
+Vercel 项目 Root Directory 为 deploy，启用 sourceFilesOutsideRootDirectory。构建时复制 ../pages 到 public；Node 24 Functions 提供 /api/accounts。
+
+## 初始化
+
+数据库执行 schema.sql 中的语句。服务端环境变量 DATABASE_URL 为 Neon 数据库连接，STUDIO_SETUP_TOKEN 为随机32字节初始化密钥；两者不写入仓库。首次初始化页面只允许持有初始化密钥的管理者设置姓名、手机号和密码。初始化后不能再次创建管理员。
+
+## 权限
+
+手机号为管理员分配的登录名，无公开注册，不发送短信验证码，不表示手机号已验证。密码使用独立随机盐的 scrypt 哈希。登录会话为 Secure/HttpOnly/SameSite=Strict Cookie，数据库只保存会话摘要。用户不能提升管理员角色，账户停用、改绑、重置密码后旧会话失效。
+
+管理员可添加 Grok 账户标识，创建用户并分配对应标识，不保存 Grok 密码或 Cookie。只有通过后端管理员验证的 grok-open 入口会跳转到 Grok。分配记录不代表自动登录 Grok 或调用网页会员额度。
+
+模型中心可配置剧本、白膜、图片、分镜页面，在框架限制允许时嵌入；被原站禁止嵌入时独立打开。输入包是本站定义的 JSON，旧模型需适配协议才能自动读取；当前不声称已经打通原模型的 API。
+
+本地素材按登录账号分库存储。不能把 IndexedDB 隔离当作服务端保密边界；同一设备应使用独立系统账户。GitHub Pages 不托管账户服务，正式账户版使用 Vercel 同源站点。
