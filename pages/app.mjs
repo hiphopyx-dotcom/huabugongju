@@ -1,8 +1,8 @@
-import * as C from './core.mjs?v=47d4ba265b70';import * as DB from './db.mjs?v=47d4ba265b70';
-import * as Cloud from './cloud.mjs?v=47d4ba265b70';
+import * as C from './core.mjs?v=2c57f863f70b';import * as DB from './db.mjs?v=2c57f863f70b';
+import * as Cloud from './cloud.mjs?v=2c57f863f70b';
 const GITHUB_PAGES=true;
-import * as Accounts from './accounts.mjs?v=47d4ba265b70';
-import * as SB from './storyboard.mjs?v=47d4ba265b70';
+import * as Accounts from './accounts.mjs?v=2c57f863f70b';
+import * as SB from './storyboard.mjs?v=2c57f863f70b';
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)],E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let P,projects=[],mode=localStorage.getItem('jbp-mode')||'pro',page='home',selected=null,linkFrom=null,filter='all',search='',history=[],future=[],saveTimer,saveChain=Promise.resolve(),playback=null,renderJob=null,exporting=false,uiBusy=false;
 const icons={text:'▤',character:'♧',scene:'◫',prop:'◇',image:'▧',video:'▷',audio:'♫',output:'▣'};let cloudAccount=null,cloudList=[],cloudError='';let recording=null,requestingMic=false;let toastTimer;let uiRevision=0,preparingPlay=false;

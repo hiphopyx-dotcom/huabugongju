@@ -5,3 +5,4 @@ CREATE TABLE IF NOT EXISTS studio_sessions (token_hash text PRIMARY KEY, user_id
 CREATE TABLE IF NOT EXISTS studio_login_limits (key text PRIMARY KEY, attempts integer NOT NULL, until_ms bigint NOT NULL);
 CREATE TABLE IF NOT EXISTS studio_account_audit (id text PRIMARY KEY, actor text NOT NULL, action text NOT NULL, target text NOT NULL, created bigint NOT NULL);
 CREATE TABLE IF NOT EXISTS studio_model_modules (id text PRIMARY KEY CHECK(id IN ('script','white','image','storyboard')), name text NOT NULL, url text NOT NULL DEFAULT '', updated bigint NOT NULL);
+CREATE TABLE IF NOT EXISTS studio_grok_modules (grok_account_id text NOT NULL REFERENCES studio_grok_accounts(id), module_id text NOT NULL CHECK(module_id IN ('script','white','image','storyboard')), url text NOT NULL DEFAULT '', updated bigint NOT NULL, PRIMARY KEY(grok_account_id,module_id));
