@@ -25,6 +25,7 @@ const raw=cookie(req);const u=raw?await one('SELECT a.*,g.label AS grok_label FR
 if(op==='me'&&req.method==='GET')return json({user:u?cleanUser(u):null,configured:true,administratorConfigured:!!await one("SELECT id FROM studio_accounts WHERE role='admin'")});
 if(op==='logout'&&req.method==='POST'){if(raw)await q('DELETE FROM studio_sessions WHERE token_hash=$1',hash(raw));return json({loggedOut:true},200,{'Set-Cookie':'__Host-jbp-session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0'})}
 if((op==='modules'||op==='module-open')&&req.method==='GET'){
+if(op==='modules')requireAdmin(u);
 if(raw&&!u)throw new AccountError(401,'登录已失效，请返回工作台重新登录');
 const modules=await q('SELECT id,name,url FROM studio_model_modules ORDER BY id');
 let bindings=[];if(u?.grok_label)bindings=await q('SELECT module_id,url FROM studio_grok_modules WHERE grok_account_id=$1',u.grok_account_id);
