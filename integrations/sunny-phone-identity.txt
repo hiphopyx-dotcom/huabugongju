@@ -1,0 +1,20 @@
+
+// Called only after the workbench's one-use PKCE ticket is redeemed server-side.
+// Match an existing local phone identity; never create users or change roles.
+export async function signInWithStudioIdentity(phoneRaw: string) {
+  const phone = normalizePhone(phoneRaw);
+  if (!phone) return null;
+  await ensureTables();
+  const member = await findMemberByPhone(phone);
+  if (!member) return null;
+  const sql = await getSql();
+  const [user] = await sql.query<{ id: string; name: string; email: string }>(
+    `select id, name, email from "user" where id = $1 and email = $2 limit 1`,
+    [member.user_id, phoneEmail(phone)],
+  );
+  if (!user) return null;
+  const locked = await lockedGoogleUserIds();
+  if (locked.has(user.id) || isLockedGoogleEmail(user.email)) return null;
+  const signed = await openPhoneSession({ userId: user.id });
+  return { ...signed, user: { id: user.id, name: user.name || member.name, email: user.email } };
+}

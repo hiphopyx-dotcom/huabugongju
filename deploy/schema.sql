@@ -9,3 +9,5 @@ CREATE TABLE IF NOT EXISTS studio_grok_modules (grok_account_id text NOT NULL RE
 CREATE TABLE IF NOT EXISTS studio_collab_rooms (id text PRIMARY KEY,owner text NOT NULL REFERENCES studio_accounts(id),title text NOT NULL,document text NOT NULL,revision integer NOT NULL DEFAULT 0,updated bigint NOT NULL);
 CREATE TABLE IF NOT EXISTS studio_collab_members (room_id text NOT NULL REFERENCES studio_collab_rooms(id),user_id text NOT NULL REFERENCES studio_accounts(id),role text NOT NULL CHECK(role IN ('editor','viewer')),PRIMARY KEY(room_id,user_id));
 CREATE TABLE IF NOT EXISTS studio_collab_presence (room_id text NOT NULL REFERENCES studio_collab_rooms(id),client text NOT NULL,user_id text NOT NULL REFERENCES studio_accounts(id),cursor text NOT NULL,seen bigint NOT NULL,PRIMARY KEY(room_id,client));
+CREATE TABLE IF NOT EXISTS studio_sso_tickets (code_hash text PRIMARY KEY,session_hash text NOT NULL,user_id text NOT NULL REFERENCES studio_accounts(id),module_id text NOT NULL,audience text NOT NULL,challenge text NOT NULL,expires bigint NOT NULL,consumed boolean NOT NULL DEFAULT false);
+CREATE INDEX IF NOT EXISTS studio_sso_expiry ON studio_sso_tickets(expires);
