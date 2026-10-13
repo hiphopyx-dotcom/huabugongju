@@ -40,5 +40,4 @@ jobs:
       - name: Run existing regression tests
         run: node --test tests/*.test.mjs
 
-      - name: TypeScript typecheck
-        run: pnpm exec tsc --noEmit
+      # Portable source check: the Site-managed adapter and integration rely on\n      # files injected outside a normal GitHub checkout. See tsconfig.ci.json.\n      - name: TypeScript application typecheck\n        run: pnpm exec tsc -p tsconfig.ci.json --noEmit
