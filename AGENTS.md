@@ -17,7 +17,7 @@
 - 核心工作台：`public/studio/`；页面与 API：`app/`、`pages/`；云端服务：`lib/cloud-service.mjs`；数据库：`db/`、`drizzle/`。
 - 主要测试：`tests/*.test.mjs`。
 - 使用 Node.js 24、pnpm 11.25.0，依赖按锁文件安装。
-- 最低检查：`node --test tests/*.test.mjs` 和 `pnpm exec tsc --noEmit`。
+- 最低检查：`node --test tests/*.test.mjs` 和 `pnpm exec tsc -p tsconfig.ci.json --noEmit`。
 - 本仓库包含特定 Sites/Vinext/Cloudflare 构建适配层，构建/预览与 Vercel 发布的工作方式以现有实际配置为准，不要擅自替换框架、部署目标或服务端环境。
 - 不能运行的测试必须在 PR 中明确标记“未验证”，不允许描述为“通过”。
 
