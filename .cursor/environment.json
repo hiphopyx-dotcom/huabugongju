@@ -1,0 +1,3 @@
+{
+  "install": "node --version && npx --yes pnpm@11.25.0 install --frozen-lockfile"
+}
