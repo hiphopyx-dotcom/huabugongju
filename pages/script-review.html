@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>剧爆棚 · 双模型审稿室</title><link rel="stylesheet" href="style.css">
+<style>
+.review-shell{max-width:1440px;margin:0 auto;padding:26px}.review-top{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.review-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,430px);gap:18px}
+.review-grid .section{margin:10px 0}.review-actions{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}
+.review-actions button{min-width:135px}.review-section textarea{min-height:115px}.review-section #source{min-height:420px;font-family:"Songti SC",SimSun,serif;font-size:15px}
+.review-mini{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.review-step{border:1px solid #3b4552;border-radius:9px;padding:12px;margin-bottom:10px;white-space:pre-wrap;word-break:break-word}
+.review-step summary{cursor:pointer;font-weight:650}.review-step pre{white-space:pre-wrap;max-height:400px;overflow:auto}
+.review-step b{color:#d9fc6d}.review-warning{color:#ffc5a4}.review-passed{color:#d9fc6d}.review-log{max-height:740px;overflow:auto}
+textarea,input{margin-top:8px}.review-top .brand{margin-right:auto}#status{min-height:20px}#reviewIssues{line-height:1.7}
+@media(max-width:930px){.review-grid{grid-template-columns:1fr}.review-mini{grid-template-columns:1fr}}
+</style></head>
+<body><div class="review-shell">
+<div class="review-top"><span class="brand"><i>✳</i> 剧爆棚 · 双模型审稿室</span>
+<a href="./index.html" class="grok-link">← 返回工作台</a><span id="identity" class="muted">正在验证账户…</span></div>
+<div class="notice">OpenAI 编剧 → Gemini 独立评审 → OpenAI 定向修订 → Gemini 复评。每一轮自动留底，封板集不可处理；只在你点击“采纳终稿”后写回原项目。</div>
+<p id="status" role="status"></p>
+<div class="review-grid">
+<section class="review-section">
+<div class="section"><div class="grid2">
+<label>剧本项目<select id="project" aria-label="选择剧本项目"></select></label>
+<label>待写/审集数<input id="episodeNo" type="number" min="1" max="200" value="11"></label></div>
+<div class="review-mini" style="margin-top:12px">
+<label>最低合格分<input id="threshold" type="number" min="60" max="100" value="95"></label>
+<label>最多修改轮次<input id="maxRounds" type="number" min="0" max="3" value="3"></label>
+<label>是否第1集<input id="firstEpisode" type="text" readonly value="否（自动判断）"></label></div>
+<div class="grid2">
+<label>正文最少计数字符<input id="minChars" type="number" min="100" max="8000" value="700"></label>
+<label>正文最多计数字符<input id="maxChars" type="number" min="100" max="12000" value="1000"></label></div>
+<label>已封板集数（如 1-10,30,50）<input id="lockedEpisodes" placeholder="1-10,30,50"></label>
+<label>故事母版 / 前后集因果 / 人物设定<textarea id="context" placeholder="粘贴大纲、相邻集关键剧情、人物小传；仅当前这集可修改。"></textarea></label>
+<label>定制验收要求<textarea id="rubric"></textarea></label>
+</div>
+<div class="section">
+<div class="row wrap"><h3>当前集正文</h3><span class="spacer"></span><small id="charCount">0 字符</small></div>
+<textarea id="source" class="script-text" placeholder="留空：由 OpenAI 撰写新的一集；已有正文：先送 Gemini 审稿。"></textarea>
+<div class="review-actions"><button id="run" class="primary">▶ 自动写作与复评</button>
+<button id="stop">中止后续步骤</button><button id="saveDraft">保存本集草稿</button>
+<button id="adopt">采纳终稿，写回项目</button></div>
+<div class="row wrap"><button id="exportLog">导出审稿全记录 JSON</button><button id="exportText">导出本集 TXT</button><button id="exportWord">导出当前项目 Word</button></div>
+<p class="muted">默认不会覆盖原文。修改过程和评审记录保存到当前浏览器的独立审稿档案；切换设备前请导出备份。</p>
+</div>
+</section>
+<aside class="review-section"><div class="section"><h3>评审结果</h3><div id="reviewIssues" class="muted">选择一个项目后开始。</div></div>
+<div class="section"><div class="row"><h3>版本时间线</h3><span class="spacer"></span><button id="refreshVersions">刷新</button></div><div id="history" class="review-log"></div></div>
+</aside>
+</div></div><script type="module" src="script-review.mjs"></script></body></html>

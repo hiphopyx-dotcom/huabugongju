@@ -1,1 +1,16 @@
-{"name":"jubaopeng-account-server","private":true,"type":"module","engines":{"node":">=22"},"scripts":{"build":"node build.mjs","test":"node --test tests/*.test.mjs"},"dependencies":{"@neondatabase/serverless":"^1.0.2"}}
+{
+  "name": "jubaopeng-account-server",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.0.2",
+    "docx": "^9.5.0"
+  }
+}
