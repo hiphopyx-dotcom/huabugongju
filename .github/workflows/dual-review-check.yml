@@ -1,0 +1,29 @@
+name: Dual Model Script Review Checks
+on:
+  pull_request:
+    paths:
+      - 'deploy/**'
+      - 'pages/**'
+      - '.github/workflows/dual-review-check.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install and run API tests
+        run: |
+          cd deploy
+          npm install --no-package-lock --ignore-scripts
+          npm test
+      - name: Verify production static build
+        run: |
+          cd deploy
+          npm run build
+          test -f public/script-review.html
+          test -f public/script-review.mjs
