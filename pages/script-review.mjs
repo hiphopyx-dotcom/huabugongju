@@ -25,9 +25,10 @@ function extractEpisode(script,no){
 }
 export function replaceEpisode(script,no,text){
  const items=spans(script),target=items.find(x=>x.no===no);
- if(target)return script.slice(0,target.at)+text.trim()+'\n\n'+script.slice(target.end);
- if(!script.trim())return text.trim()+'\n';
- if(items.length&&no>Math.max(...items.map(x=>x.no)))return script.trim()+'\n\n'+text.trim()+'\n';
+ const body=/^\s*第\s*[零一二三四五六七八九十百千\d]+\s*集/.test(text.trim())?text.trim():'第'+no+'集\n'+text.trim();
+ if(target)return script.slice(0,target.at)+body+'\n\n'+script.slice(target.end);
+ if(!script.trim())return body+'\n';
+ if(items.length&&no>Math.max(...items.map(x=>x.no)))return script.trim()+'\n\n'+body+'\n';
  throw Error('无法安全定位这一集：当前项目没有可识别的分集标题，请先整理“第N集”标题或复制终稿手动合并');
 }
 function idbOpen(scope){return new Promise((resolve,reject)=>{const request=indexedDB.open('jbp-script-review-'+scope,1);request.onupgradeneeded=()=>request.result.createObjectStore('archives',{keyPath:'projectId'});request.onerror=()=>reject(request.error);request.onsuccess=()=>resolve(request.result)})}
@@ -36,7 +37,7 @@ const archiveGet=id=>archiveRequest('readonly',s=>s.get(id));
 const archivePut=entry=>archiveRequest('readwrite',s=>s.put(structuredClone(entry)));
 const recordFor=no=>archive.history[String(no)]||(archive.history[String(no)]=[]);
 function settingsFromUI(){return {context:$('context').value,rubric:$('rubric').value,lockedEpisodes:$('lockedEpisodes').value,threshold:Number($('threshold').value),maxRounds:Number($('maxRounds').value),minChars:Number($('minChars').value),maxChars:Number($('maxChars').value)}}
-async function persist(){archive.settings=settingsFromUI();archive.updated=Date.now();await archivePut(archive)}
+async function persist(){const limits=archive.settings?.customLimits||{};limits[currentNumber()]=[$('minChars').value,$('maxChars').value];archive.settings={...settingsFromUI(),customLimits:limits};archive.updated=Date.now();await archivePut(archive)}
 function updateCount(){$('charCount').textContent=countChars($('source').value)+' 计数字符'}
 async function stage(stageName,payload){
  aborter=new AbortController();
@@ -167,6 +168,6 @@ $('saveDraft').addEventListener('click',async()=>{if(busy)return;await append('m
 $('adopt').addEventListener('click',adopt);
 $('refreshVersions').addEventListener('click',renderHistory);
 $('exportLog').addEventListener('click',()=>{if(archive)download(current.title+'-审稿记录.json',JSON.stringify(archive,null,2))});
-$('exportText').addEventListener('click',()=>{if(current)download(current.title+'-第'+currentNumber()+'集.txt',latestText()||$('source').value,'text/plain;charset=utf-8')});
+$('exportText').addEventListener('click',()=>{if(current)download(current.title+'-第'+currentNumber()+'集.txt',$('source').value,'text/plain;charset=utf-8')});
 $('exportWord').addEventListener('click',exportWord);
 window.addEventListener('beforeunload',e=>{if(busy){e.preventDefault();e.returnValue=''}});boot();
