@@ -22,7 +22,7 @@ export function evaluateReview(report,text,threshold,minChars,maxChars){
  return {score,issues,summary:clip(report.summary,2400),strengths:Array.isArray(report?.strengths)?report.strengths.slice(0,8).map(x=>clip(x,300)):[],charCount,passed:reasons.length===0,reasons};
 }
 export function parseReview(text){
- try{return JSON.parse(text.replace(/^\\s*\x60\x60\x60(?:json)?\\s*/i,'').replace(/\\s*\x60\x60\x60\\s*$/,'').trim())}
+ try{return JSON.parse(text.replace(/^\s*\x60\x60\x60(?:json)?\s*/i,'').replace(/\s*\x60\x60\x60\s*$/,'').trim())}
  catch{throw new AccountError(502,'Gemini 未返回有效 JSON 评审，请重试本轮')}
 }
 async function responseText(response){
@@ -67,10 +67,10 @@ export function createScriptReviewHandler(query,config={},fetcher=fetch){
    const now=Date.now(),rateKey=hash('jbp-script-ai:'+user.id);
    const limiter=await one('INSERT INTO studio_login_limits (key,attempts,until_ms) VALUES ($1,1,$2) ON CONFLICT(key) DO UPDATE SET attempts=CASE WHEN studio_login_limits.until_ms<$3 THEN 1 ELSE studio_login_limits.attempts+1 END,until_ms=CASE WHEN studio_login_limits.until_ms<$3 THEN $2 ELSE studio_login_limits.until_ms END RETURNING attempts',rateKey,now+3600000,now);
    if(limiter.attempts>30)throw new AccountError(429,'每小时最多请求30次模型，请稍后再试');
-   const common='项目：'+title+'；第'+episodeNo+'集；目标计数字符：'+minChars+'—'+maxChars+'。\\n创作母版与前后集事实（仅供参考，不得擅自改动）：\\n'+context+'\\n验收标准：\\n'+rubric+'\\n注意：封板内容不可改写；只能输出本集正文；不编造前集因果；台词、动作、场次规范；故事动作连贯，冲突密集，结尾有戏剧性悬念。';
+   const common='项目：'+title+'；第'+episodeNo+'集；目标计数字符：'+minChars+'—'+maxChars+'。\n创作母版与前后集事实（仅供参考，不得擅自改动）：\n'+context+'\n验收标准：\n'+rubric+'\n注意：封板内容不可改写；只能输出本集正文；不编造前集因果；台词、动作、场次规范；故事动作连贯，冲突密集，结尾有戏剧性悬念。';
    if(stage==='review'){
     const system='你是独立的短剧总编审，严格、可验证地按剧本事实评估。只输出符合格式的 JSON，不包含 Markdown。分数0至100。critical表示严重剧情断裂、因果矛盾、人物背离或封板冲突；major表示显著节奏/钩子/信息缺失；minor表示格式和语言问题。必须指明具体位置和可实施建议。';
-    const prompt=common+'\\n待审正文：\\n'+text+'\\n返回 JSON：{"score":95,"summary":"...","strengths":["..."],"issues":[{"severity":"critical|major|minor","location":"第几场或台词","problem":"问题","suggestion":"建议"}]}';
+    const prompt=common+'\n待审正文：\n'+text+'\n返回 JSON：{"score":95,"summary":"...","strengths":["..."],"issues":[{"severity":"critical|major|minor","location":"第几场或台词","problem":"问题","suggestion":"建议"}]}';
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),55000);
     try{
      const r=await fetcher('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(geminiModel)+':generateContent',{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':geminiKey},body:JSON.stringify({systemInstruction:{parts:[{text:system}]},contents:[{role:'user',parts:[{text:prompt}]}],generationConfig:{responseMimeType:'application/json',maxOutputTokens:3500}}),signal:controller.signal});
@@ -81,7 +81,7 @@ export function createScriptReviewHandler(query,config={},fetcher=fetch){
     }finally{clearTimeout(timer)}
    }
    const system='你是中国商业短剧职业编剧，遵循已锁母版、人物逻辑和逐场剧本格式。只输出当前一集的完整可拍摄正文，不输出解释、评分或编辑标签。不得省略必要场景和动作。避免同质化重复桥段。';
-   const prompt=stage==='draft'?common+'\\n用户提供的当前草稿或剧情指令（可以为空）：\\n'+text+'\\n请完成这一集完整剧本。':common+'\\n当前一集原稿：\\n'+text+'\\nGemini 逐条评审反馈：\\n'+feedback+'\\n只精准修订本集，优先修复有证据的问题；不能因为追求分数破坏原有已锁定的剧情和台词，不得更动其他集。';
+   const prompt=stage==='draft'?common+'\n用户提供的当前草稿或剧情指令（可以为空）：\n'+text+'\n请完成这一集完整剧本。':common+'\n当前一集原稿：\n'+text+'\nGemini 逐条评审反馈：\n'+feedback+'\n只精准修订本集，优先修复有证据的问题；不能因为追求分数破坏原有已锁定的剧情和台词，不得更动其他集。';
    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),55000);
    try{
     const r=await fetcher('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:'Bearer '+openaiKey,'Content-Type':'application/json'},body:JSON.stringify({model:openaiModel,store:false,instructions:system,input:prompt,max_output_tokens:6500}),signal:controller.signal});
