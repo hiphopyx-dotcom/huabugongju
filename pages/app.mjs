@@ -1,10 +1,10 @@
-import * as C from './core.mjs?v=fc624f70d071';import * as DB from './db.mjs?v=fc624f70d071';
-import * as Cloud from './cloud.mjs?v=fc624f70d071';
+import * as C from './core.mjs?v=21fcb46a82be';import * as DB from './db.mjs?v=21fcb46a82be';
+import * as Cloud from './cloud.mjs?v=21fcb46a82be';
 const GITHUB_PAGES=true;
-import * as Accounts from './accounts.mjs?v=fc624f70d071';
-import * as Collaboration from './collaboration.mjs?v=fc624f70d071';
-import * as SB from './storyboard.mjs?v=fc624f70d071';
-import * as Guide from './shot-guide.mjs?v=fc624f70d071';
+import * as Accounts from './accounts.mjs?v=21fcb46a82be';
+import * as Collaboration from './collaboration.mjs?v=21fcb46a82be';
+import * as SB from './storyboard.mjs?v=21fcb46a82be';
+import * as Guide from './shot-guide.mjs?v=21fcb46a82be';
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)],E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let P,projects=[],mode=localStorage.getItem('jbp-mode')||'pro',page=typeof location!=='undefined'&&['video','shots'].includes(new URLSearchParams(location.search).get('tool'))?new URLSearchParams(location.search).get('tool'):'home',selected=null,linkFrom=null,filter='all',search='',history=[],future=[],saveTimer,saveChain=Promise.resolve(),playback=null,renderJob=null,exporting=false,uiBusy=false;
 const icons={text:'▤',character:'♧',scene:'◫',prop:'◇',image:'▧',video:'▷',audio:'♫',output:'▣'};let cloudAccount=null,cloudList=[],cloudError='';let recording=null,requestingMic=false;let toastTimer;let uiRevision=0,preparingPlay=false;
