@@ -3,7 +3,8 @@ import {promisify} from 'node:util';
 const scrypt=promisify(derive);
 export class AccountError extends Error{constructor(status,message){super(message);this.status=status}}
 export function phone(value){const p=String(value||'').trim().replace(/[\s()-]/g,'');if(!/^\+?[0-9]{7,15}$/.test(p))throw new AccountError(400,'请输入有效手机号（含国家码时加 +）');return p}
-export function password(value){if(typeof value!=='string'||value.length<10||value.length>128)throw new AccountError(400,'密码需要10–128个字符');return value}
+export function password(value){if(typeof value!=='string'||value.length<6||value.length>128)throw new AccountError(400,'密码需要6–128个字符');return value}
+export function memberPassword(value){if(typeof value!=='string'||value.length<6||value.length>8)throw new AccountError(400,'成员密码需要6–8个字符');return value}
 export function name(value){const n=String(value||'').trim();if(!n||n.length>60)throw new AccountError(400,'姓名需要1–60个字符');return n}
 export const hash=value=>createHash('sha256').update(value).digest('hex');
 export const token=()=>randomBytes(32).toString('base64url');

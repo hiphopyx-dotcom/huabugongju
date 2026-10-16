@@ -1,6 +1,6 @@
-import * as V from './virtual-stage-core.mjs?v=462df29e4311';
-import {encodeStage} from './virtual-stage-export.mjs?v=462df29e4311';
-import {drawView,drawPlan,mapPoint,unmapPoint,drawElevation,mapElevation,unmapElevation} from './virtual-stage-render.mjs?v=462df29e4311';
+import * as V from './virtual-stage-core.mjs?v=7d0698dc17f1';
+import {encodeStage} from './virtual-stage-export.mjs?v=7d0698dc17f1';
+import {drawView,drawPlan,mapPoint,unmapPoint,drawElevation,mapElevation,unmapElevation} from './virtual-stage-render.mjs?v=7d0698dc17f1';
 const E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));let active=null;
 export function close(){active?.();}
 export function open({scene,duration=5,ratio='16:9',title='视频',assets=[],templates=[],onSaveTemplate,onSave,onFrames,onVideo,message=()=>{}}){
