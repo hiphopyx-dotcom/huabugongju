@@ -22,7 +22,7 @@ const storyboard=await fs.readFile(path.join(out,'storyboard.mjs'),'utf8');
 await fs.writeFile(path.join(out,'storyboard.mjs'),storyboard.replace(/from '(\.\/[^']+\.mjs)'/g,(_,source)=>`from '${source}?v=${version}'`));
 const guide=await fs.readFile(path.join(out,'shot-guide.mjs'),'utf8');
 await fs.writeFile(path.join(out,'shot-guide.mjs'),guide.replace(/from '(\.\/[^']+\.mjs)'/g,(_,source)=>`from '${source}?v=${version}'`).replace("import('./shot-stage.mjs')",`import('./shot-stage.mjs?v=${version}')`));
-for(const name of ['virtual-stage.mjs','virtual-stage-export.mjs']){const code=await fs.readFile(path.join(out,name),'utf8');await fs.writeFile(path.join(out,name),code.replace(/from '(\.\/[^']+\.mjs)'/g,(_,source)=>`from '${source}?v=${version}'`));}
+for(const name of ['virtual-stage.mjs','virtual-stage-export.mjs','virtual-stage-render.mjs']){const code=await fs.readFile(path.join(out,name),'utf8');await fs.writeFile(path.join(out,name),code.replace(/from '(\.\/[^']+\.mjs)'/g,(_,source)=>`from '${source}?v=${version}'`));}
 const index=await fs.readFile(path.join(out,'index.html'),'utf8');
 await fs.writeFile(path.join(out,'index.html'),index.replace('src="app.mjs"',`src="app.mjs?v=${version}"`));
 await fs.writeFile(path.join(out,'cloud.mjs'),`const disabled=async()=>{throw Error('GitHub Pages 版没有云端后端。请使用本地项目备份与 图片生成面板。')};\nexport const me=disabled,list=disabled,save=disabled,load=disabled,versions=disabled,members=disabled,addMember=disabled,removeMember=disabled,comments=disabled,comment=disabled,resolveComment=disabled,remove=disabled;\n`);
