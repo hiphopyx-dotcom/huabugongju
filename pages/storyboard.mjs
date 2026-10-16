@@ -1,5 +1,5 @@
-import * as VS from './virtual-stage-core.mjs?v=7917b9c0b705';
-import * as L from './shot-language.mjs?v=7917b9c0b705';
+import * as VS from './virtual-stage-core.mjs?v=edb333021a79';
+import * as L from './shot-language.mjs?v=edb333021a79';
 export const groups=[['size','景别',L.SHOT_SIZES,'中景'],['angle','机位',L.ANGLES,'眼睛平视'],['framing','构图',L.COMPOSITIONS,'三分构图'],['camera','运镜',L.CAMERA_MOVES,'固定镜头'],['stylize','风格化',L.STYLIZES,'电影叙事'],['lighting','光影',L.LIGHTINGS,'电影级布光'],['technique','特殊摄影',L.TECHNIQUES,'']];
 export const roles=[['characters','人物参考','角色'],['locations','场景参考','场景'],['props','道具参考','道具'],['reverseLocations','反打场景','场景']];
 export const emotions=['保持参考','平静','开心','愤怒','悲伤','惊讶','恐惧','厌恶','轻蔑'];
