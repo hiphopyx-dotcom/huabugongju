@@ -38,3 +38,24 @@ s.db.close();
 });
 test('成员分配支持6至8位密码，短密码可登录并重置，旧长密码仍可登录',async()=>{const s=setup(),admin=await seed(s);for(const [i,pwd] of ['123456','abc1234','pass1234'].entries()){const phone='1350000000'+i;const created=await s.request('users','POST',{name:'短密码成员'+i,phone,password:pwd},admin);assert.equal(created.status,201,JSON.stringify(await created.json()));const login=await s.request('login','POST',{phone,password:pwd});assert.equal(login.status,200);const info=await login.json(),oldSession=login.headers.get('set-cookie').split(';')[0];assert.equal(info.user.name,'短密码成员'+i);const reset=await s.request('users','PUT',{id:info.user.id,name:info.user.name,password:'87654321',active:true},admin);assert.equal(reset.status,200);assert.equal((await (await s.request('me','GET',null,oldSession)).json()).user,null);assert.equal((await s.request('login','POST',{phone,password:'87654321'})).status,200)}const legacyHash=await hashPassword('legacy-long-password');s.db.prepare('UPDATE studio_accounts SET password_hash=? WHERE phone=?').run(legacyHash,'13500000000');assert.equal((await s.request('login','POST',{phone:'13500000000',password:'legacy-long-password'})).status,200);for(const password of ['12345','123456789']){const r=await s.request('users','POST',{name:'长度不合规',phone:'13400000000',password},admin);assert.equal(r.status,400);assert.match((await r.json()).error,/6.*8/)}s.db.close()});
 test('重复分配手机号给出明确提示，原成员绑定和密码保持有效',async()=>{const s=setup(),admin=await seed(s);await s.request('users','POST',{name:'原成员',phone:'13300000000',password:'123456'},admin);const r=await s.request('users','POST',{name:'重复成员',phone:'133 0000 0000',password:'654321'},admin);assert.equal(r.status,409);assert.match((await r.json()).error,/手机号已存在/);assert.equal((await s.request('login','POST',{phone:'13300000000',password:'123456'})).status,200);s.db.close()});
+
+test('管理员批量登记账户、改名停用，并独立改绑或解除手机号绑定',async()=>{
+const s=setup(),admin=await seed(s);
+let r=await s.request('grok-accounts','POST',{labels:['甲@example.com','乙@example.com','甲@example.com']},admin);assert.equal(r.status,201);assert.equal((await r.json()).added,2);
+r=await s.request('grok-accounts','POST',{labels:['甲@example.com']},admin);assert.equal(r.status,201);assert.equal((await r.json()).added,0);
+let pool=(await (await s.request('users','GET',null,admin)).json()).grokAccounts;const [a,b]=pool;
+await s.request('users','POST',{name:'成员',phone:'13900000008',password:'123456',grokAccountId:a.id},admin);
+let login=await s.request('login','POST',{phone:'13900000008',password:'123456'}),session=login.headers.get('set-cookie').split(';')[0],id=(await login.json()).user.id;
+assert.equal((await s.request('assign-grok','PUT',{id,grokAccountId:b.id},session)).status,403);
+assert.equal((await s.request('assign-grok','PUT',{id,grokAccountId:'missing'},admin)).status,400);
+assert.equal((await s.request('assign-grok','PUT',{id,grokAccountId:b.id},admin)).status,200);
+assert.equal((await (await s.request('me','GET',null,session)).json()).user,null);
+login=await s.request('login','POST',{phone:'13900000008',password:'123456'});assert.equal((await login.json()).user.grokAccount,b.label);
+assert.equal((await s.request('grok-accounts','PUT',{id:b.id,label:'备用账户',active:false},admin)).status,200);
+assert.equal((await s.request('assign-grok','PUT',{id,grokAccountId:b.id},admin)).status,400);
+assert.equal((await s.request('assign-grok','PUT',{id,grokAccountId:null},admin)).status,200);
+login=await s.request('login','POST',{phone:'13900000008',password:'123456'});assert.equal((await login.json()).user.grokAccount,null);
+assert.equal((await s.request('grok-accounts','PUT',{id:'missing',label:'不存在',active:true},admin)).status,404);
+assert.equal((await s.request('grok-accounts','POST',{labels:['正常','']},admin)).status,400);
+s.db.close();
+});

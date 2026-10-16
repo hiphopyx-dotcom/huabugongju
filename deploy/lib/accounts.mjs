@@ -44,7 +44,26 @@ const audit=async(action,target)=>q('INSERT INTO studio_account_audit (id,actor,
 if(op==='grok-open'&&req.method==='GET')return new Response(null,{status:302,headers:{Location:'https://grok.com/imagine','Cache-Control':'no-store'}});
 if(op==='users'&&req.method==='GET')return json({users:await q('SELECT a.id,a.phone,a.name,a.role,a.active,a.grok_account_id,g.label AS grok_label FROM studio_accounts a LEFT JOIN studio_grok_accounts g ON g.id=a.grok_account_id ORDER BY a.created DESC'),grokAccounts:await q('SELECT id,label,active FROM studio_grok_accounts ORDER BY label'),grokModules:await q('SELECT grok_account_id,module_id,url FROM studio_grok_modules')});
 if(op==='grok-modules'&&req.method==='PUT'){const b=await read(req);if(!['script','white','image','storyboard'].includes(b.moduleId))throw new AccountError(400,'模型类型无效');if(!await one('SELECT id FROM studio_grok_accounts WHERE id=$1 AND active=true',String(b.grokAccountId)))throw new AccountError(400,'请选择有效的 Grok 账户');const url=moduleUrl(b.url);await q('INSERT INTO studio_grok_modules (grok_account_id,module_id,url,updated) VALUES ($1,$2,$3,$4) ON CONFLICT(grok_account_id,module_id) DO UPDATE SET url=excluded.url,updated=excluded.updated',b.grokAccountId,b.moduleId,url,now);await audit('configure-grok-module',b.grokAccountId+':'+b.moduleId);return json({saved:true})}
-if(op==='grok-accounts'&&req.method==='POST'){const b=await read(req),id=randomUUID();await q('INSERT INTO studio_grok_accounts (id,label) VALUES ($1,$2)',id,name(b.label));await audit('create-grok-label',id);return json({created:true},201)}
+if(op==='grok-accounts'&&req.method==='POST'){
+const b=await read(req),input=b.labels===undefined?[b.label]:b.labels;
+if(!Array.isArray(input)||!input.length||input.length>50)throw new AccountError(400,'每次请输入1–50个账户');
+const labels=[...new Set(input.map(v=>name(v)))],params=[];
+const values=labels.map(label=>{params.push(randomUUID(),label);return `($${params.length-1},$${params.length})`}).join(',');
+const added=await q('INSERT INTO studio_grok_accounts (id,label) VALUES '+values+' ON CONFLICT(label) DO NOTHING RETURNING id',...params);
+for(const row of added)await audit('create-grok-label',row.id);
+return json({created:true,added:added.length,skipped:input.length-added.length},201)}
+if(op==='grok-accounts'&&req.method==='PUT'){
+const b=await read(req),id=String(b.id),label=name(b.label);
+if(typeof b.active!=='boolean')throw new AccountError(400,'账户状态无效');
+const updated=await one('UPDATE studio_grok_accounts SET label=$1,active=$2 WHERE id=$3 RETURNING id',label,b.active,id);
+if(!updated)throw new AccountError(404,'Grok 账户不存在');
+await audit('update-grok-label',id);return json({saved:true})}
+if(op==='assign-grok'&&req.method==='PUT'){
+const b=await read(req),id=String(b.id),grok=b.grokAccountId||null;
+if(grok&&!await one('SELECT id FROM studio_grok_accounts WHERE id=$1 AND active=true',grok))throw new AccountError(400,'请选择启用的 Grok 账户');
+const updated=await one("UPDATE studio_accounts SET grok_account_id=$1,session_version=session_version+1 WHERE id=$2 AND role='user' RETURNING id",grok,id);
+if(!updated)throw new AccountError(404,'成员账户不存在');
+await audit('assign-grok',id);return json({saved:true})}
 if(op==='modules'&&req.method==='PUT'){const b=await read(req);if(!['script','white','image','storyboard'].includes(b.id))throw new AccountError(400,'模型类型无效');await q('INSERT INTO studio_model_modules (id,name,url,updated) VALUES ($1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET name=excluded.name,url=excluded.url,updated=excluded.updated',b.id,name(b.name),moduleUrl(b.url),now);await audit('configure-module',b.id);return json({saved:true})}
 if(op==='users'&&req.method==='POST'){const b=await read(req),id=randomUUID(),p=phone(b.phone),n=name(b.name),pwd=memberPassword(b.password);if(await one('SELECT id FROM studio_accounts WHERE phone=$1',p))throw new AccountError(409,'手机号已存在，请在“已有账户”中编辑或重置密码');const grok=b.grokAccountId||null;if(grok&&!await one('SELECT id FROM studio_grok_accounts WHERE id=$1 AND active=true',grok))throw new AccountError(400,'请选择有效的 Grok 账户');const inserted=await one("INSERT INTO studio_accounts (id,phone,name,password_hash,role,grok_account_id,created) VALUES ($1,$2,$3,$4,'user',$5,$6) ON CONFLICT(phone) DO NOTHING RETURNING id",id,p,n,await hashPassword(pwd),grok,now);if(!inserted)throw new AccountError(409,'手机号已存在，请在“已有账户”中编辑或重置密码');await audit('create-user',id);return json({created:true},201)}
 if(op==='users'&&req.method==='PUT'){const b=await read(req),target=await one('SELECT * FROM studio_accounts WHERE id=$1',String(b.id));if(!target)throw new AccountError(404,'账户不存在');if(target.role==='admin')throw new AccountError(400,'此入口不能修改管理员');const grok=b.grokAccountId||null;if(grok&&!await one('SELECT id FROM studio_grok_accounts WHERE id=$1 AND active=true',grok))throw new AccountError(400,'请选择有效的 Grok 账户');const encoded=b.password?await hashPassword(memberPassword(b.password)):target.password_hash;await q('UPDATE studio_accounts SET name=$1,grok_account_id=$2,active=$3,password_hash=$4,session_version=session_version+1 WHERE id=$5',name(b.name),grok,b.active!==false,encoded,target.id);await audit('update-user',target.id);return json({saved:true})}
