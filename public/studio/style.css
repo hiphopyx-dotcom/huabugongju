@@ -25,3 +25,5 @@ button:focus-visible{outline:2px solid #d9fc6d;outline-offset:2px}button:disable
 .vs-camera-tools{padding:10px;border:1px solid #63513d;background:#29241e;border-radius:10px;margin:10px 0}.vs-camera-tools label{min-width:100px;flex:1}.vs-camera-tools input{margin-top:5px}.vs-camera-tools button{border-color:#826246;color:#ffd0a1}
 
 .vs-easy-tools .vs-route-method{flex:0 1 125px;min-width:105px}
+
+.vs-duration-controls{display:flex;gap:6px;align-items:flex-end}.vs-duration-controls label{font-size:11px;color:#c4ced7}.vs-duration-controls input{width:90px;margin-top:5px}.vs-duration-controls button{font-size:12px;padding:10px}@media(max-width:800px){.vs-header{flex-wrap:wrap}.vs-duration-controls{order:3;width:100%;flex-wrap:wrap}}

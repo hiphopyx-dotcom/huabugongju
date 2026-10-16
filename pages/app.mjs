@@ -1,13 +1,13 @@
-import * as C from './core.mjs?v=d17db74061f6';import * as DB from './db.mjs?v=d17db74061f6';
-import * as Cloud from './cloud.mjs?v=d17db74061f6';
+import * as C from './core.mjs?v=7917b9c0b705';import * as DB from './db.mjs?v=7917b9c0b705';
+import * as Cloud from './cloud.mjs?v=7917b9c0b705';
 const GITHUB_PAGES=true;
-import * as Accounts from './accounts.mjs?v=d17db74061f6';
-import * as Collaboration from './collaboration.mjs?v=d17db74061f6';
-import * as SB from './storyboard.mjs?v=d17db74061f6';
-import * as Guide from './shot-guide.mjs?v=d17db74061f6';
-import * as VT from './video-templates.mjs?v=d17db74061f6';
-import * as VS from './virtual-stage-core.mjs?v=d17db74061f6';
-import * as Stage from './virtual-stage.mjs?v=d17db74061f6';
+import * as Accounts from './accounts.mjs?v=7917b9c0b705';
+import * as Collaboration from './collaboration.mjs?v=7917b9c0b705';
+import * as SB from './storyboard.mjs?v=7917b9c0b705';
+import * as Guide from './shot-guide.mjs?v=7917b9c0b705';
+import * as VT from './video-templates.mjs?v=7917b9c0b705';
+import * as VS from './virtual-stage-core.mjs?v=7917b9c0b705';
+import * as Stage from './virtual-stage.mjs?v=7917b9c0b705';
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)],E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let P,projects=[],mode=localStorage.getItem('jbp-mode')||'pro',page=typeof location!=='undefined'&&['video','shots'].includes(new URLSearchParams(location.search).get('tool'))?new URLSearchParams(location.search).get('tool'):'home',selected=null,linkFrom=null,filter='all',search='',history=[],future=[],saveTimer,saveChain=Promise.resolve(),playback=null,renderJob=null,exporting=false,uiBusy=false;
 const icons={text:'▤',character:'♧',scene:'◫',prop:'◇',image:'▧',video:'▷',audio:'♫',output:'▣'};let cloudAccount=null,cloudList=[],cloudError='';let recording=null,requestingMic=false;let toastTimer;let uiRevision=0,preparingPlay=false;
@@ -217,4 +217,4 @@ actions['video-template-apply']=()=>applyVideoTemplate(false);
 actions['video-template-append']=()=>applyVideoTemplate(true);
 
 actions['virtual-stage-clear']=()=>change(()=>delete P.settings.virtualStage);
-actions['virtual-stage']=e=>{const shot=e?.dataset?.id?(P.settings.videoShots||[]).find(s=>s.id===e.dataset.id):null;if(e?.dataset?.id&&!shot)return;const duration=shot?Number(shot.duration)||5:Number(P.settings.videoDuration)||5;Stage.open({assets:P.assets,templates:P.settings.virtualStageTemplates||[],onSaveTemplate:template=>change(()=>{(P.settings.virtualStageTemplates||=[]).push(template)},false),scene:shot?shot.virtualStage:P.settings.virtualStage,duration,ratio:P.settings.videoRatio||P.settings.ratio,title:shot?'视频镜头 '+((P.settings.videoShots||[]).indexOf(shot)+1):'视频',message:toast,onSave:scene=>{change(()=>{if(shot)shot.virtualStage=scene;else P.settings.virtualStage=scene});toast('虚拟片场已保存，运镜数据随视频任务传递')},onFrames:images=>{change(()=>{const ids=images.map((im,i)=>{const a={...im,id:C.uid(),name:'片场'+(i?'尾帧':'首帧'),kind:'image',type:'分镜',created:Date.now(),locked:false,tags:'虚拟片场',description:'白模运镜预演参考，不是AI生成结果'};P.assets.push(a);return a.id});SB.appendVideoReferences(P,ids);if(shot){shot.firstFrame=ids[0];shot.lastFrame=ids[1]}else{P.settings.firstFrame=ids[0];P.settings.lastFrame=ids[1]}} ,false);toast('片场首尾帧已加入参考素材')},onVideo:im=>{change(()=>P.assets.push({...im,id:C.uid(),name:'虚拟片场 · 运镜预演.webm',kind:'video',type:'视频',created:Date.now(),locked:false,tags:'虚拟片场,预演',description:'按摄影机关键帧渲染的白模预演'}),false)}})};
+actions['virtual-stage']=e=>{const shot=e?.dataset?.id?(P.settings.videoShots||[]).find(s=>s.id===e.dataset.id):null;if(e?.dataset?.id&&!shot)return;const duration=shot?Number(shot.duration)||5:Number(P.settings.videoDuration)||5;Stage.open({assets:P.assets,templates:P.settings.virtualStageTemplates||[],onSaveTemplate:template=>change(()=>{(P.settings.virtualStageTemplates||=[]).push(template)},false),scene:shot?shot.virtualStage:P.settings.virtualStage,duration,ratio:P.settings.videoRatio||P.settings.ratio,title:shot?'视频镜头 '+((P.settings.videoShots||[]).indexOf(shot)+1):'视频',message:toast,onSave:scene=>{const shots=P.settings.videoShots||[];let resized=null,total=scene.duration;if(shot&&P.settings.videoSequence){total=Math.round((shots.reduce((n,s)=>n+(Number(s.duration)||0),0)-Number(shot.duration)+scene.duration)*10)/10;if(total>60)throw Error('多镜头合计不能超过60秒，请减少本镜时长')}else if(!shot&&P.settings.videoSequence&&shots.length&&scene.duration!==Number(P.settings.videoDuration))resized=SB.resizeVideoSequence(shots,scene.duration);change(()=>{if(shot){shot.virtualStage=scene;shot.duration=scene.duration;if(P.settings.videoSequence)P.settings.videoDuration=total}else{P.settings.virtualStage=scene;P.settings.videoDuration=scene.duration;if(resized)P.settings.videoShots=resized}});toast('虚拟片场已保存，运镜数据随视频任务传递')},onFrames:images=>{change(()=>{const ids=images.map((im,i)=>{const a={...im,id:C.uid(),name:'片场'+(i?'尾帧':'首帧'),kind:'image',type:'分镜',created:Date.now(),locked:false,tags:'虚拟片场',description:'白模运镜预演参考，不是AI生成结果'};P.assets.push(a);return a.id});SB.appendVideoReferences(P,ids);if(shot){shot.firstFrame=ids[0];shot.lastFrame=ids[1]}else{P.settings.firstFrame=ids[0];P.settings.lastFrame=ids[1]}} ,false);toast('片场首尾帧已加入参考素材')},onVideo:im=>{change(()=>P.assets.push({...im,id:C.uid(),name:'虚拟片场 · 运镜预演.webm',kind:'video',type:'视频',created:Date.now(),locked:false,tags:'虚拟片场,预演',description:'按摄影机关键帧渲染的白模预演'}),false)}})};
