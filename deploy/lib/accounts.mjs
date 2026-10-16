@@ -2,7 +2,7 @@ import {AccountError,phone,name,memberPassword,hashPassword,verifyPassword,requi
 import {randomUUID,timingSafeEqual} from 'node:crypto';
 import {SSO_ORIGINS,launchPage} from './sso.mjs';
 const json=(data,status=200,extra={})=>Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...extra}});
-const cleanUser=u=>({id:u.id,name:u.name,phone:u.phone,role:u.role,grokAccount:u.grok_label||null});
+const cleanUser=u=>({id:u.id,name:u.name,phone:u.phone,role:u.role,grokAccount:u.role==='admin'?(u.grok_label||null):null,generationAssigned:!!u.grok_label});
 async function read(req){const text=await req.text();if(text.length>16384)throw new AccountError(413,'请求过大');try{return JSON.parse(text)}catch{throw new AccountError(400,'请求格式错误')}}
 export function createAccountHandler(query,config={}){
 return async function handle(req){try{
