@@ -20,3 +20,4 @@ button:focus-visible{outline:2px solid #d9fc6d;outline-offset:2px}button:disable
 .vs-easy-tools{padding:14px;border:1px solid #556537;border-radius:12px;background:#202a20;margin-bottom:14px}.vs-easy-tools h3{margin:0 0 10px;font-size:16px}.vs-easy-tools label{min-width:180px;flex:1}.vs-easy-tools p{margin:10px 0;color:#d9fc6d;font-size:13px;line-height:1.6}.vs-advanced{margin:12px 0;padding:10px;border:1px solid #344253;border-radius:9px}.vs-advanced>summary{cursor:pointer;color:#bdcbdc;font-size:13px}.vs-advanced[open]>summary{margin-bottom:12px}.vs-easy-tools button{min-height:36px}.vs-controls>small{display:block;margin:7px 0;line-height:1.6}
 
 #vsPlan{max-height:360px;aspect-ratio:8/3;touch-action:none}
+@media(min-width:1000px){.vs-views{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}.vs-views #vsPlan{height:280px;max-height:280px;aspect-ratio:auto}.vs-views #vsCamera{height:280px;max-height:280px}}
