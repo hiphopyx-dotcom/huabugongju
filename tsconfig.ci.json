@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "exclude": [
+    "node_modules",
+    "examples",
+    "integrations/script-phone-identity.ts",
+    "vite.config.ts"
+  ]
+}
