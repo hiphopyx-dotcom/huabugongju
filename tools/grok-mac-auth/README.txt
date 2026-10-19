@@ -38,7 +38,7 @@
 依赖及限制
 需要Node.js22或更新版和npm；缺少时从 https://nodejs.org/ 安装官方macOS版本。
 首次授权会询问是否安装官方 @xai-official/grok@1.0.60 到本机独立目录，无需sudo。
-本工具不读取或上传 auth.json。Grok登录凭据只由官方CLI在本机管理。
+本工具仅在本机读取 auth.json 中的邮箱和用户标识，用于核对账户；不输出或上传令牌。Grok 登录凭据仍由官方 CLI 管理。
 连接只允许本站正式域名，不监听本机或公网端口。不会设置开机启动。
 后台为每个生成账户设置执行锁；单次本机执行最多75秒。超时不会自动重新生成，避免重复使用额度。
 网络失败可以重试回传，但不会重新执行同一已领取任务。Mac断线或休眠时，网站会显示离线或任务超时。
@@ -57,3 +57,9 @@
 https://docs.x.ai/build/cli/reference
 https://docs.x.ai/build/cli/headless-scripting
 https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/02-authentication.md
+
+账号身份核对（2026-10-19）
+- 导入配置、启动、心跳及领取/执行文字任务前，核对本机登录邮箱是否匹配本机和网站的邮箱标识。
+- 不匹配或身份元数据缺失时停止该连接，不允许靠目录名称冒充已授权账号。
+- 登录身份核对是本机元数据检查，不代表官方在线验证，也不代表图片或视频能力已开通。
+- 工作端在线和返回结果不等于完成了所有成员登录及真实生成验收。
