@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS studio_collab_presence (room_id text NOT NULL REFEREN
 CREATE TABLE IF NOT EXISTS studio_sso_tickets (code_hash text PRIMARY KEY,session_hash text NOT NULL,user_id text NOT NULL REFERENCES studio_accounts(id),module_id text NOT NULL,audience text NOT NULL,challenge text NOT NULL,expires bigint NOT NULL,consumed boolean NOT NULL DEFAULT false);
 CREATE INDEX IF NOT EXISTS studio_sso_expiry ON studio_sso_tickets(expires);
 CREATE TABLE IF NOT EXISTS studio_generation_workers (grok_account_id text PRIMARY KEY REFERENCES studio_grok_accounts(id),token_hash text NOT NULL UNIQUE,active boolean NOT NULL DEFAULT true,seen bigint NOT NULL DEFAULT 0,busy_until bigint NOT NULL DEFAULT 0,created bigint NOT NULL);
-CREATE TABLE IF NOT EXISTS studio_generation_jobs (id text PRIMARY KEY,owner text NOT NULL REFERENCES studio_accounts(id),grok_account_id text NOT NULL REFERENCES studio_grok_accounts(id),session_version integer NOT NULL,request_key text NOT NULL,prompt text NOT NULL,status text NOT NULL CHECK(status IN ('queued','running','done','failed')),result text,error text,lease_hash text,leased_until bigint NOT NULL DEFAULT 0,created bigint NOT NULL,updated bigint NOT NULL,UNIQUE(owner,request_key));
+CREATE TABLE IF NOT EXISTS studio_generation_jobs (id text PRIMARY KEY,owner text NOT NULL REFERENCES studio_accounts(id),grok_account_id text NOT NULL REFERENCES studio_grok_accounts(id),admin_locked boolean NOT NULL DEFAULT false,admin_deleted boolean NOT NULL DEFAULT false,admin_revision integer NOT NULL DEFAULT 0,session_version integer NOT NULL,request_key text NOT NULL,prompt text NOT NULL,status text NOT NULL CHECK(status IN ('queued','running','done','failed')),result text,error text,lease_hash text,leased_until bigint NOT NULL DEFAULT 0,created bigint NOT NULL,updated bigint NOT NULL,UNIQUE(owner,request_key));
 CREATE INDEX IF NOT EXISTS studio_generation_queue ON studio_generation_jobs(grok_account_id,status,created);
 CREATE UNIQUE INDEX IF NOT EXISTS studio_generation_one_running ON studio_generation_jobs(grok_account_id) WHERE status='running';
 CREATE TABLE IF NOT EXISTS studio_asset_records (
@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS studio_asset_records (
  provenance text NOT NULL CHECK(provenance IN ('local','bound-result')),
  prompt text NOT NULL DEFAULT '', preview text NOT NULL DEFAULT '',
  media_url text NOT NULL DEFAULT '', created bigint NOT NULL, synced bigint NOT NULL,
+ admin_locked boolean NOT NULL DEFAULT false, admin_deleted boolean NOT NULL DEFAULT false, admin_revision integer NOT NULL DEFAULT 0,
  PRIMARY KEY(owner,project_id,asset_id)
 );
 CREATE INDEX IF NOT EXISTS studio_asset_records_owner_created ON studio_asset_records(owner,created DESC);

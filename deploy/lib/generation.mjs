@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {AccountError,hash,token,cookie,safeOrigin,requireAdmin} from './security.mjs';
 const json=(value,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 const ERRORS={CLI_ERROR:'本机生成失败，请管理员检查登录或额度',EMPTY_RESULT:'模型没有返回文字',TIMEOUT:'本机生成超时，未自动重复调用',RESULT_TOO_LARGE:'生成结果过大，请缩短要求'};
-const jobView=j=>({id:j.id,prompt:j.prompt,status:j.status,result:j.result||'',error:j.error||'',created:Number(j.created),updated:Number(j.updated)});
+const jobView=j=>({adminLocked:!!j.admin_locked,id:j.id,prompt:j.prompt,status:j.status,result:j.result||'',error:j.error||'',created:Number(j.created),updated:Number(j.updated)});
 export function createGenerationHandler(query,config={}){return async req=>{try{
 const url=new URL(req.url),action=url.searchParams.get('action')||'jobs',now=config.now?.()??Date.now();
 const q=(s,...p)=>query(s,p),one=async(s,...p)=>(await q(s,...p))[0];
@@ -57,7 +57,7 @@ const account=user.role==='admin'?String(body.grokAccountId||''):user.grok_accou
 if(!account||!await one('SELECT id FROM studio_grok_accounts WHERE id=$1 AND active=true',account))throw new AccountError(409,'请让管理员分配启用的生成账户');
 if(typeof body.prompt!=='string'||!body.prompt.trim()||body.prompt.length>8000)throw new AccountError(400,'请输入1–8000字的文字要求');
 if(typeof body.requestId!=='string'||!/^[A-Za-z0-9_-]{1,80}$/.test(body.requestId))throw new AccountError(400,'任务提交标识无效');
-const duplicate=await one('SELECT * FROM studio_generation_jobs WHERE owner=$1 AND request_key=$2',user.id,body.requestId);if(duplicate)return json({job:jobView(duplicate)});
+const duplicate=await one('SELECT * FROM studio_generation_jobs WHERE owner=$1 AND request_key=$2',user.id,body.requestId);if(duplicate){if(duplicate.admin_deleted)throw new AccountError(410,'此任务已移入回收站');return json({job:jobView(duplicate)})}
 await cleanup(account);
 const w=await one('SELECT seen FROM studio_generation_workers WHERE grok_account_id=$1 AND active=true',account);if(!w||Number(w.seen)<=now-45000)throw new AccountError(409,'Mac 生成端尚未连接，请管理员启动本机工作端');
 const pending=await one("SELECT count(*) AS n FROM studio_generation_jobs WHERE owner=$1 AND status IN ('queued','running')",user.id);if(Number(pending.n)>=3)throw new AccountError(429,'你有3个待完成任务，请等待结果');
@@ -67,8 +67,8 @@ const job=await one('SELECT * FROM studio_generation_jobs WHERE owner=$1 AND req
 }
 if((action==='job'||action==='jobs')&&req.method==='GET'){
 const accounts=await q("SELECT DISTINCT grok_account_id FROM studio_generation_jobs WHERE owner=$1 AND status IN ('queued','running')",user.id);for(const a of accounts)await cleanup(a.grok_account_id);
-if(action==='job'){const j=await one('SELECT * FROM studio_generation_jobs WHERE id=$1 AND owner=$2',String(url.searchParams.get('id')||''),user.id);if(!j)throw new AccountError(404,'任务不存在');return json({job:jobView(j)})}
-return json({jobs:(await q('SELECT * FROM studio_generation_jobs WHERE owner=$1 ORDER BY created DESC,id DESC LIMIT 10',user.id)).map(jobView)});
+if(action==='job'){const j=await one('SELECT * FROM studio_generation_jobs WHERE id=$1 AND owner=$2 AND admin_deleted=false',String(url.searchParams.get('id')||''),user.id);if(!j)throw new AccountError(404,'任务不存在');return json({job:jobView(j)})}
+return json({jobs:(await q('SELECT * FROM studio_generation_jobs WHERE owner=$1 AND admin_deleted=false ORDER BY created DESC,id DESC LIMIT 10',user.id)).map(jobView)});
 }
 throw new AccountError(404,'生成接口不存在');
 }catch(e){if(!e.status)console.error('generation-service',e.code||e.name);return json({error:e.status?e.message:'文字生成服务暂不可用'},e.status||503)}}}
