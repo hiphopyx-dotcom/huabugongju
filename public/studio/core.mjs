@@ -6,7 +6,21 @@ export function connect(p,from,to){if(from===to)throw Error('不能连接自身'
 export function upstream(p,id){let seen=new Set();function walk(v){for(const e of p.edges.filter(e=>e.to===v))if(!seen.has(e.from)){seen.add(e.from);walk(e.from)}}walk(id);return p.nodes.filter(n=>seen.has(n.id))}
 export function inputs(p,id){const n=p.nodes.find(n=>n.id===id);if(!n)throw Error('节点不存在');const list=[...upstream(p,id),n];return {prompt:list.map(n=>n.prompt.trim()).filter(Boolean).join('\n\n'),assets:[...new Set(list.flatMap(n=>n.assetIds))].map(id=>p.assets.find(a=>a.id===id)).filter(Boolean),nodes:list.map(n=>n.id)}}
 export function removeNode(p,id){p.nodes=p.nodes.filter(n=>n.id!==id);p.edges=p.edges.filter(e=>e.from!==id&&e.to!==id)}
-export function parseScript(text){let scene='未指定场景',episode='第一集',shots=[];for(const raw of text.split(/\n/)){let s=raw.trim();if(!s)continue;if(/^第[一二三四五六七八九十百零\d]+集/.test(s)){episode=s;continue}if(/^\d+[-－]\d+/.test(s)){scene=s;continue}if(s.startsWith('人物：')||s.startsWith('人物:'))continue;const subtitle=s.match(/^△?字幕[：:](.+)/);if(subtitle){shots.push({id:uid(),episode,scene,sourceText:s,description:subtitle[1],dialogue:'',duration:3,assetId:'',subtitle:subtitle[1],camera:'固定',size:'特写'});continue}if(s.startsWith('△')){shots.push({id:uid(),episode,scene,sourceText:s,description:s.replace(/^△\s*/,''),dialogue:'',duration:5,assetId:'',subtitle:'',camera:'固定',size:'中景'});continue}if(shots.length){const last=shots.at(-1);last.dialogue+=(last.dialogue?'\n':'')+s;last.sourceText+=(last.sourceText?'\n':'')+s}else shots.push({id:uid(),episode,scene,sourceText:s,description:s,dialogue:'',duration:5,assetId:'',subtitle:'',camera:'固定',size:'中景'})}return shots}
+export function parseScript(text){
+ let scene='未指定场景',episode='第一集',cast=[],shots=[],last=null;
+ for(const [index,raw] of text.replace(/\r\n?/g,'\n').split('\n').entries()){
+  const s=raw.trim();if(!s)continue;
+  if(/^第[一二三四五六七八九十百千零〇两\d]+[集话回](?:\s|$|[：:、.])/.test(s)){episode=s;scene='未指定场景';cast=[];last=null;continue}
+  if(/^(?:第[一二三四五六七八九十百\d]+场|(?:场景|场次)[：:]|\d+[—–－-]\d+|(?:INT\.|EXT\.|内景|外景))/i.test(s)){scene=s;cast=[];last=null;continue}
+  if(/^(?:人物|出场人物|角色)[：:]/.test(s)){cast=s.replace(/^[^：:]+[：:]\s*/,'').split(/[、,，；;]/).map(x=>x.trim()).filter(Boolean);continue}
+  const subtitle=s.match(/^[△▲]?字幕[：:](.+)/),dialogue=!/^[△▲]/.test(s)&&/^[^：:]{1,30}[：:]/.test(s);
+  const names=[...new Set([...cast.filter(n=>s.includes(n)),...(dialogue?[s.split(/[：:]/)[0].replace(/[（(].*$/,'').trim()]:[])])];
+  if(dialogue&&last){last.dialogue+=(last.dialogue?'\n':'')+s;last.sourceText+='\n'+s;last.sourceLines.push(index+1);last.characterNames=[...new Set([...last.characterNames,...names])];continue}
+  last={id:uid(),episode,scene,sourceText:s,sourceLines:[index+1],description:subtitle?subtitle[1]:dialogue?'人物对话（请补充画面）':s.replace(/^[△▲]\s*/,''),dialogue:dialogue?s:'',duration:subtitle?3:5,assetId:'',subtitle:subtitle?subtitle[1]:'',camera:'固定镜头',size:subtitle?'特写':'中景',angle:'眼睛平视',characterNames:names,locationNames:[scene],propNames:[],breakdownMethod:'local'};
+  shots.push(last);
+ }
+ return shots;
+}
 export function duration(p){return p.clips.filter(c=>c.track==='video').reduce((n,c)=>n+c.duration,0)}
 export function activeClip(p,t){let at=0;for(const c of p.clips.filter(c=>c.track==='video')){if(t>=at&&t<at+c.duration)return {clip:c,start:at,local:t-at};at+=c.duration}return null}
 export function rebuildSubtitles(p){let at=0;p.subtitles=[];for(const c of p.clips.filter(c=>c.track==='video')){if(c.subtitle)p.subtitles.push({id:uid(),start:at,end:at+c.duration,text:c.subtitle});at+=c.duration}}
