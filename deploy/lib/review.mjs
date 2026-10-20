@@ -164,8 +164,13 @@ export function createReviewHandler(query,config={}){
       if(action==='adopt'){
         if(r.step!=='done'||!r.passed)throw new AccountError(409,'未达到95分或尚未完成双重评审');
         if(body.currentHash!==r.source_hash)throw new AccountError(409,'用户已修改原稿，拒绝覆盖');
-        await q('UPDATE studio_script_reviews SET adopted=$1,updated=$2 WHERE id=$3 AND owner=$4 AND step=$5',true,now,r.id,user.id,'done');
         return json({candidate:r.draft_two,sourceHash:r.source_hash,projectId:r.project_id});
+      }
+      if(action==='confirm-adopt'){
+        if(r.step!=='done'||!r.passed)throw new AccountError(409,'未达到95分不能确认采纳');
+        if(body.currentHash!==r.source_hash||body.candidateHash!==sha(r.draft_two))throw new AccountError(409,'正文版本校验不通过');
+        await q('UPDATE studio_script_reviews SET adopted=$1,updated=$2 WHERE id=$3 AND owner=$4 AND step=$5',true,now,r.id,user.id,'done');
+        return json({confirmed:true});
       }
       if(action==='retry'){
         if(body.confirm!==true)throw new AccountError(400,'必须明确确认重试');
