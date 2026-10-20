@@ -135,12 +135,12 @@ export function createScriptReview({document,getProject,getUser,change,flush,ope
     if(digest!==run.sourceHash)return toast('本集原稿已变更，请重新评审；旧版本已保留');
     if(!confirm('确定采纳95分通过稿？原稿会进入本地撤回历史，请先确认已核对候选内容。'))return;
     const inspected=run.versions?.find(v=>v.step==='OpenAI修订稿')?.text||'';
-    if(!inspected.includes(part.name))throw Error('候选稿缺少原有集标题，拒绝采纳');
+    if(part.key!=='全文'&&!inspected.includes(part.name))throw Error('候选稿缺少原有集标题，拒绝采纳');
     const saved=await api('adopt',{id:run.id,currentHash:digest});
     const now=getProject(),current=scriptParts(now.script).find(p=>p.key===part.key);
     if(now.id!==saved.projectId||!current||await textHash(current.text)!==saved.sourceHash||now.scriptSeals?.[part.key])throw Error('原稿已变化或封板，拒绝写入');
     const adopted=saved.candidate;
-    if(typeof adopted!=='string'||!adopted.trim()||!adopted.includes(part.name))throw Error('候选稿没有原有集标题，禁止采纳');
+    if(typeof adopted!=='string'||!adopted.trim()||(part.key!=='全文'&&!adopted.includes(part.name)))throw Error('候选稿没有原有集标题，禁止采纳');
     change(()=>{
       const live=getProject(),section=scriptParts(live.script).find(p=>p.key===part.key);
       if(!section||section.text!==current.text)throw Error('采纳前原稿又发生变化');
