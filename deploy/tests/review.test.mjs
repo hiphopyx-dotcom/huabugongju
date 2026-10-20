@@ -77,7 +77,7 @@ test('95-point threshold prevents adopting rejected scripts',async()=>{
 });
 test('request idempotency and cross-account isolation',async()=>{
   const s=environment(),auth=await admin(s),run=await begin(s,auth);
-  const duplicate=await s.review('start',{projectId:'project_1',requestId:'abcdefgh1234',source,reference:'same'},auth);
+  const duplicate=await s.review('start',{projectId:'project_1',partKey:'第1集#1',requestId:'abcdefgh1234',source,reference:'same'},auth);
   assert.equal((await duplicate.json()).run.id,run.id);
   assert.equal((await s.review('status',null,'','GET','&id='+run.id)).status,401);
   const extra=await s.account('users',{phone:'13900000000',name:'成员',password:'12345678'},auth);
