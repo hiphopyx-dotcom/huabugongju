@@ -22,7 +22,7 @@ async function textHash(text){
   return [...new Uint8Array(array)].map(byte=>byte.toString(16).padStart(2,'0')).join('');
 }
 const STAGES={write:'OpenAI初稿',review1:'Gemini独立初评',rewrite:'OpenAI按意见修订',review2:'Gemini独立复评',done:'已完成'};
-export function createScriptReview({document,getProject,getUser,change,openModal,toast}){
+export function createScriptReview({document,getProject,getUser,change,flush,openModal,toast}){
   let selected='',run=null,configured=false,open=false,busy=false,stop=false,error='',statusText='';
   const parts=()=>scriptParts(getProject()?.script||'');
   const chosen=()=>parts().find(p=>p.key===selected)||parts()[0];
@@ -133,6 +133,8 @@ export function createScriptReview({document,getProject,getUser,change,openModal
     const digest=await textHash(part.text);
     if(digest!==run.sourceHash)return toast('本集原稿已变更，请重新评审；旧版本已保留');
     if(!confirm('确定采纳95分通过稿？原稿会进入本地撤回历史，请先确认已核对候选内容。'))return;
+    const inspected=run.versions?.find(v=>v.step==='OpenAI修订稿')?.text||'';
+    if(!inspected.includes(part.name))throw Error('候选稿缺少原有集标题，拒绝采纳');
     const saved=await api('adopt',{id:run.id,currentHash:digest});
     const now=getProject(),current=scriptParts(now.script).find(p=>p.key===part.key);
     if(now.id!==saved.projectId||!current||await textHash(current.text)!==saved.sourceHash||now.scriptSeals?.[part.key])throw Error('原稿已变化或封板，拒绝写入');
@@ -144,8 +146,10 @@ export function createScriptReview({document,getProject,getUser,change,openModal
       live.script=live.script.slice(0,section.start)+adopted+live.script.slice(section.end);
       live.reviewAudit=[...(live.reviewAudit||[]),{id:run.id,partKey:part.key,score:run.score,at:Date.now()}].slice(-40);
     });
+    if(typeof flush==='function')await flush();
+    await api('confirm-adopt',{id:run.id,currentHash:digest,candidateHash:await textHash(adopted)});
     run={...run,adopted:true};
-    statusText='已人工采纳，可使用工具栏「撤回」恢复修改前版本。';update();
+    statusText='已人工采纳并保存版本记录。';update();
   }
   function toggleSeal(){
     const part=chosen(),project=getProject(),locked=Boolean(project.scriptSeals?.[part.key]);
