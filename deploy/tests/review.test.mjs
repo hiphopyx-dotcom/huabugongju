@@ -18,7 +18,12 @@ function environment({score=97,cap=15}={}){
     return original?'第1集\n1-1 车间 日 内\n人物：陆川 周宁\n△周宁递上账本。\n陆川：我已经查清账目。\n第1集完':
       '第1集\n1-1 车间 日 内\n人物：陆川 周宁\n△陆川翻开账本。\n周宁：账目有问题。\n第1集完';
   };
-  const reviewer=async()=>{calls.push({provider:'Gemini'});return {score,strengths:['冲突清楚'],issues:[],hardFailures:[],revisionInstructions:[]}};
+  const reviewer=async()=>{calls.push({provider:'Gemini'});
+    const marks={hook:20,logic:20,emotion:20,continuity:20,dialogue:20};
+    let penalty=100-score;
+    for(const key of Object.keys(marks).reverse()){const take=Math.min(20,Math.max(0,penalty));marks[key]-=take;penalty-=take}
+    return {score,dimensions:marks,strengths:['冲突清楚'],issues:[],hardFailures:[],revisionInstructions:[]}
+  };
   const handler=createReviewHandler(query,{now:()=>now,writer,reviewer});
   const http=(fn,action,body,auth='',method=body?'POST':'GET',params='')=>{
     const target=(fn===accounts?'https://studio.test/api/accounts':url)+'?action='+action+params;
@@ -96,5 +101,6 @@ test('local hard red lines and malformed rating cannot be accepted',()=>{
   assert.equal(reviewPasses({score:98,hardFailures:[]},'△A\n△B'),false);
   assert.equal(reviewPasses({score:96,hardFailures:['人物变更']},source),false);
   assert.throws(()=>parseVerdict('{"score":"99"}'),/格式/);
-  assert.throws(()=>parseVerdict('{"score":99}'),/数组/);
+  assert.throws(()=>parseVerdict('{"score":99}'),/维度/);
+  assert.throws(()=>parseVerdict(JSON.stringify({score:99,dimensions:{hook:20,logic:20,emotion:20,continuity:20,dialogue:20},strengths:[],issues:[],hardFailures:[],revisionInstructions:[]})),/不一致/);
 });
