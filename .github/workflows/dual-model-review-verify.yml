@@ -1,0 +1,29 @@
+name: Dual-model review branch checks
+on:
+  push:
+    branches: [upgrade/model-review-and-script-seal-20261020]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Check frontend and backend syntax
+        run: |
+          node --check pages/app.mjs
+          node --check pages/script-quality.mjs
+          node --check pages/script-review.mjs
+          node --check deploy/lib/review.mjs
+          node --check deploy/api/review.js
+      - name: Run full account service regression suite
+        run: node --test deploy/tests/*.test.mjs
+      - name: Check deployment config and site build
+        run: |
+          cd deploy
+          node build.mjs
+          node --check public/app.mjs
