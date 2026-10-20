@@ -11,7 +11,7 @@ function environment({score=97,cap=15}={}){
   const db=new DatabaseSync(':memory:');
   db.exec(fs.readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));
   const query=async(statement,params)=>db.prepare(statement).all(Object.fromEntries(params.map((v,i)=>['$'+(i+1),typeof v==='boolean'?Number(v):v])));
-  let now=1800000000000,calls=[];
+  let now=Date.now(),calls=[];
   const accounts=createAccountHandler(query,{setupToken:'setup-test'});
   const writer=async(prompt,original)=>{
     calls.push({provider:'OpenAI',original});
