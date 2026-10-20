@@ -87,7 +87,7 @@ function publicRun(r){
   const second=r.review_two?parseVerdict(r.review_two):null;
   const raw=String(r.step);
   return {
-    id:r.id,projectId:r.project_id,sourceHash:r.source_hash,
+    id:r.id,projectId:r.project_id,partKey:r.part_key,sourceHash:r.source_hash,
     stage:raw,created:Number(r.created),updated:Number(r.updated),
     firstScore:first?.score??null,score:second?.score??null,
     passed:!!r.passed,adopted:!!r.adopted,error:r.error_text||'',
@@ -132,13 +132,17 @@ export function createReviewHandler(query,config={}){
         else{
           const projectId=url.searchParams.get('projectId');
           if(!validId(projectId))throw new AccountError(400,'项目标识错误');
-          r=await one('SELECT * FROM studio_script_reviews WHERE project_id=$1 AND owner=$2 ORDER BY created DESC LIMIT 1',projectId,user.id);
+          const partKey=url.searchParams.get('partKey');
+          r=partKey?
+            await one('SELECT * FROM studio_script_reviews WHERE project_id=$1 AND owner=$2 AND part_key=$3 ORDER BY created DESC LIMIT 1',projectId,user.id,partKey):
+            await one('SELECT * FROM studio_script_reviews WHERE project_id=$1 AND owner=$2 ORDER BY created DESC LIMIT 1',projectId,user.id);
         }
         return json({run:r?publicRun(r):null,configured:!!(config.writer||process.env.OPENAI_API_KEY)&&!!(config.reviewer||process.env.GEMINI_API_KEY)});
       }
       if(action==='start'){
         if(!validId(body.projectId))throw new AccountError(400,'项目标识无效');
         if(typeof body.requestId!=='string'||!/^[A-Za-z0-9_-]{8,80}$/.test(body.requestId))throw new AccountError(400,'提交标识无效');
+        if(typeof body.partKey!=='string'||!body.partKey.trim()||body.partKey.length>64)throw new AccountError(400,'分集标识无效');
         if(typeof body.source!=='string'||body.source.length>30000||typeof body.reference!=='string'||body.reference.length>12000)throw new AccountError(400,'剧本或集纲超长');
         if(!body.source.trim()&&!body.reference.trim())throw new AccountError(400,'请先输入剧本或集纲');
         const exists=await one('SELECT * FROM studio_script_reviews WHERE owner=$1 AND request_key=$2',user.id,body.requestId);
@@ -149,8 +153,8 @@ export function createReviewHandler(query,config={}){
         const active=await one("SELECT count(*) AS n FROM studio_script_reviews WHERE owner=$1 AND step <> 'done'",user.id);
         if(Number(active?.n||0)>=2)throw new AccountError(429,'已有两项未完成评审，请先完成已有任务');
         const id=randomUUID();
-        await q('INSERT INTO studio_script_reviews (id,owner,project_id,request_key,source_hash,source_text,reference_text,step,created,updated) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
-          id,user.id,body.projectId,body.requestId,sha(body.source),body.source,body.reference,'write',now,now);
+        await q('INSERT INTO studio_script_reviews (id,owner,project_id,part_key,request_key,source_hash,source_text,reference_text,step,created,updated) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',
+          id,user.id,body.projectId,body.partKey,body.requestId,sha(body.source),body.source,body.reference,'write',now,now);
         const r=await one('SELECT * FROM studio_script_reviews WHERE id=$1 AND owner=$2',id,user.id);
         return json({run:publicRun(r)},201);
       }
