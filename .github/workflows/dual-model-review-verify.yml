@@ -17,10 +17,11 @@ jobs:
         run: |
           node --check pages/app.mjs
           node --check pages/script-quality.mjs
+          node --check pages/script-review.mjs
           node --check deploy/lib/review.mjs
           node --check deploy/api/review.js
       - name: Run scripted review tests
-        run: node --test deploy/tests/review.test.mjs deploy/tests/script-quality.test.mjs
+        run: node --test deploy/tests/review.test.mjs deploy/tests/script-quality.test.mjs deploy/tests/script-review-client.test.mjs
       - name: Check deployment config and site build
         run: |
           cd deploy
