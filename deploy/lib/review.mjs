@@ -34,7 +34,7 @@ export function parseVerdict(raw){
     dims[key]=Math.round(n);
   }
   const computed=Object.values(dims).reduce((a,b)=>a+b,0);
-  if(Math.abs(computed-obj.score)>1)throw new Error('模型总分与五项分数不一致，拒绝虚高分数');
+  if(Math.round(obj.score)!==computed)throw new Error('模型总分与五项分数不一致，拒绝虚高分数');
   for(const field of ['issues','hardFailures','revisionInstructions','strengths']){
     if(!Array.isArray(obj[field])||!obj[field].every(x=>typeof x==='string'))throw new Error('评审缺少'+field+'数组');
   }
