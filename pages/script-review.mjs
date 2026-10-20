@@ -46,6 +46,7 @@ export function createScriptReview({document,getProject,getUser,change,flush,ope
     if(!run?.review)return '';
     const v=run.review;
     return `<div class="notice"><strong>评审评分：${ESC(v.score)}分</strong> · ${run.passed?'通过95分+红线双门槛':'尚未达到验收标准'}
+       ${v.dimensions?`<p>钩子 ${v.dimensions.hook}/20 · 逻辑 ${v.dimensions.logic}/20 · 情绪 ${v.dimensions.emotion}/20 · 连贯 ${v.dimensions.continuity}/20 · 台词 ${v.dimensions.dialogue}/20</p>`:''}
        ${(v.hardFailures||[]).length?`<p>硬伤：${ESC(v.hardFailures.join('；'))}</p>`:''}
        ${(v.issues||[]).length?`<p>问题：${ESC(v.issues.join('；'))}</p>`:''}
        ${(v.revisionInstructions||[]).length?`<p>修改指令：${ESC(v.revisionInstructions.join('；'))}</p>`:''}
