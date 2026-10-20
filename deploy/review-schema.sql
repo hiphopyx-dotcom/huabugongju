@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS studio_script_reviews (
   id text PRIMARY KEY,
   owner text NOT NULL REFERENCES studio_accounts(id),
   project_id text NOT NULL,
+  part_key text NOT NULL DEFAULT '全文',
   request_key text NOT NULL,
   source_hash text NOT NULL,
   source_text text NOT NULL,
