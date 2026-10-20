@@ -24,7 +24,6 @@ test('a sealed episode forbids edits to itself but permits another episode',()=>
 test('seal protection preserves a separate sealed episode on insert or rename',()=>{
  const parts=scriptParts(sample);
  const locked={script:sample,scriptSeals:{[parts[1].key]:{text:parts[1].text,at:1}}};
- assert.equal(sealedPartsIntact(locked,sample.replace('第1集完','第1集完\n
-人物小传')),true);
+ assert.equal(sealedPartsIntact(locked,sample.replace('第1集完','第1集完\\n人物小传')),true);
  assert.equal(sealedPartsIntact(locked,sample.replace('第2集\n','第二回\n')),false);
 });
