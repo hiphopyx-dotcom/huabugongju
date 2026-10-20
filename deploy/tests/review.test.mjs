@@ -65,7 +65,11 @@ test('four distinct model stages persist and require manual human adoption',asyn
   assert.equal((await s.review('adopt',{id:run.id,currentHash:'outdated'},auth)).status,409);
   const adopted=await s.review('adopt',{id:run.id,currentHash:hash(source)},auth);
   assert.equal(adopted.status,200);
-  assert.ok((await adopted.json()).candidate.includes('我已经查清账目'));
+  const adoptedBody=await adopted.json();
+  assert.ok(adoptedBody.candidate.includes('我已经查清账目'));
+  assert.equal((await (await s.review('status',null,auth,'GET','&id='+run.id)).json()).run.adopted,false);
+  const confirmation=await s.review('confirm-adopt',{id:run.id,currentHash:hash(source),candidateHash:hash(adoptedBody.candidate)},auth);
+  assert.equal(confirmation.status,200);
   assert.equal((await (await s.review('status',null,auth,'GET','&id='+run.id)).json()).run.adopted,true);
 });
 test('95-point threshold prevents adopting rejected scripts',async()=>{
