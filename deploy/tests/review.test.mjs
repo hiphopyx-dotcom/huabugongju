@@ -34,13 +34,13 @@ async function admin(s){
 const source='第1集\n1-1 车间 日 内\n人物：陆川 周宁\n△陆川放下茶杯。\n周宁：你查出来了？\n第1集完';
 const hash=v=>createHash('sha256').update(v).digest('hex');
 async function begin(s,auth,id='abcdefgh1234'){
-  const result=await s.review('start',{projectId:'project_1',requestId:id,source,reference:'90年代车间与财务舞弊，保留陆川、周宁。'},auth);
+  const result=await s.review('start',{projectId:'project_1',partKey:'第1集#1',requestId:id,source,reference:'90年代车间与财务舞弊，保留陆川、周宁。'},auth);
   assert.equal(result.status,201);
   return (await result.json()).run;
 }
 test('sessions are required and cross-origin mutation is rejected',async()=>{
   const s=environment();
-  let r=await s.review('start',{projectId:'proj',requestId:'12345678',source,reference:'背景'});
+  let r=await s.review('start',{projectId:'proj',partKey:'全文',requestId:'12345678',source,reference:'背景'});
   assert.equal(r.status,401);
   const auth=await admin(s);
   r=await s.handler(new Request(url+'?action=start',{method:'POST',headers:{Origin:'https://evil.example',Cookie:auth},body:'{}'}));
