@@ -1,0 +1,20 @@
+name: Screenplay QC branch checks
+on:
+  push:
+    branches: [upgrade/script-qc-gate-20261020]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Check active app syntax
+        run: node --check pages/app.mjs
+      - name: Check quality module syntax
+        run: node --check pages/script-quality.mjs
+      - name: Test screenplay quality gate
+        run: node --test deploy/tests/script-quality.test.mjs
