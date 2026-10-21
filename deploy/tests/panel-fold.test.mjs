@@ -34,10 +34,10 @@ test('section title uses visible heading and concise fallback, without storing u
  assert.equal(panelName(panel({classes:['shot']})),'分镜详情');
  assert.equal(panelName(panel({classes:['vs-controls']})),'虚拟片场操作');
 });
-test('UI code changes no source project schemas and contains a non-destructive visibility implementation',()=>{
+test('fold actions only change visibility, never delete or overwrite project data',()=>{
  const src=fs.readFileSync(new URL('../../pages/panel-fold.mjs',import.meta.url),'utf8');
- assert.match(src, /\\.classList\\.add\\('jbp-fold-content'\\)/);
- assert.match(src, /dataset\\.jbpFoldState/);
- assert.match(src, /MutationObserver/);
- assert.doesNotMatch(src,/\\.removeChild\\(|\\.replaceChildren\\(|indexedDB\\.deleteDatabase/);
+ assert.ok(src.includes("child.classList.add('jbp-fold-content')"));
+ assert.ok(src.includes('dataset.jbpFoldState'));
+ assert.ok(src.includes('MutationObserver'));
+ for(const forbidden of ['removeChild(', 'replaceChildren(', 'indexedDB.deleteDatabase'])assert.ok(!src.includes(forbidden),forbidden);
 });
