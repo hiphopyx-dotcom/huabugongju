@@ -1,4 +1,4 @@
-import {sceneAt} from './virtual-stage-core.mjs?v=1e1e8999d566';
+import {sceneAt} from './virtual-stage-core.mjs?v=0da1e756dbc7';
 // Software 3D projection: preview, stills and video share the same camera.
 const sub=(a,b)=>a.map((v,i)=>v-b[i]),dot=(a,b)=>a.reduce((n,v,i)=>n+v*b[i],0),cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],unit=a=>{const n=Math.hypot(...a)||1;return a.map(v=>v/n)};
 export function cameraBasis(p){const eye=[p.x,p.y,p.z],f=unit(sub([p.tx,p.ty,p.tz],eye)),r=unit(cross(f,Math.abs(f[1])>.99?[0,0,1]:[0,1,0])),u=cross(r,f),a=p.roll*Math.PI/180;return {eye,f,r:r.map((v,i)=>v*Math.cos(a)+u[i]*Math.sin(a)),u:u.map((v,i)=>v*Math.cos(a)-r[i]*Math.sin(a))};}
