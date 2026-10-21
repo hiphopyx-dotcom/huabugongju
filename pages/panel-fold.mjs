@@ -128,7 +128,8 @@ function enhancePanel(panel,ctx,ordinal){
   // Mark existing children, not by moving them: this preserves listeners and form values.
   for(const child of [...panel.children])if(child!==bar)child.classList.add('jbp-fold-content');
   panel.classList.add('jbp-fold-panel');
-  const defaultClosed=scope==='main'&&(ordinal>=2 || panel.matches('.video-sequence,.video-sequence-shot,article.shot')) ||scope==='modal'&&ordinal>=2;
+  const dense=panel.matches('.asset-grid,.cards')&&panel.children.length>12;
+  const defaultClosed=scope==='main'&&(dense||ordinal>=2||panel.matches('.video-sequence,.video-sequence-shot,article.shot')) ||scope==='modal'&&ordinal>=2;
   toggle(panel,decideState(read(key),defaultClosed)==='open',false);
 }
 function globalToolbar(target,ctx,scope){
