@@ -1,0 +1,31 @@
+name: All-screen collapsible areas
+on:
+  push:
+    branches: [upgrade/global-collapsible-sections-20261021]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Validate fold UI syntax
+        run: |
+          node --check pages/panel-fold.mjs
+          node --check pages/app.mjs
+      - name: Test full existing backend and section-fold behavior
+        run: node --test deploy/tests/*.test.mjs
+      - name: Install isolated DOM integration harness
+        run: npm install --prefix /tmp/jbp-fold-dom --no-save --no-audit --no-fund happy-dom@20
+      - name: Test real DOM click, state persistence and modal interactions
+        run: node deploy/tests/panel-fold.dom.mjs
+      - name: Build formal workbench
+        run: |
+          cd deploy
+          node build.mjs
+          node --check public/app.mjs
+          node --check public/panel-fold.mjs
