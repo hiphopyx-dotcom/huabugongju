@@ -116,6 +116,8 @@ export function createVideoHandler(query,config={}){
    if(req.method!=='POST')throw new AccountError(405,'视频接口操作需要POST');
    const body=await readBody(req);
    if(action==='start'){
+     if(user.role!=='admin'&&config.allowMemberGeneration!==true&&process.env.STUDIO_VIDEO_MEMBER_ACCESS!=='enabled')
+       throw new AccountError(403,'Veo付费生成默认仅管理员可提交；需要管理员明确配置成员使用权限');
      if(!configured)throw new AccountError(503,'请管理员在服务端配置GEMINI_API_KEY，尚未接通Veo视频模型');
      if(!idOk(body.projectId)||!idOk(body.requestId)||typeof body.shotId!=='string'||body.shotId.length>128)
        throw new AccountError(400,'项目或镜头标识无效');
