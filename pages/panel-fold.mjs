@@ -122,21 +122,22 @@ function enhancePanel(panel,ctx,ordinal){
     const bar=panel.querySelector(':scope > .jbp-fold-bar');
     if(bar){
       // Later-rendered elements must also stay hidden when the parent is collapsed.
-      for(const child of [...panel.children])if(child!==bar&&!child.classList.contains('jbp-fold-content')&&!child.matches('.modal-close,:scope > h2'))child.classList.add('jbp-fold-content');
+      for(const child of [...panel.children])if(child!==bar&&!child.classList.contains('jbp-fold-content')&&!child.matches('.modal-close,h2'))child.classList.add('jbp-fold-content');
       return;
     }
     // An existing inspector/modal was re-rendered with innerHTML; restore controls and state.
-    const priorState=panel.dataset.jbpFoldState;
+    const priorState=panel.dataset.jbpFoldState,priorKey=panel.dataset.jbpFoldKey;
     delete panel.dataset.jbpFoldKey;delete panel.dataset.jbpFoldTitle;
     panel.classList.remove('jbp-fold-panel');
     enhancePanel(panel,ctx,ordinal);
-    if(priorState==='closed'||priorState==='open')toggle(panel,priorState==='open',false);
+    if(panel.dataset.jbpFoldKey===priorKey&&(priorState==='closed'||priorState==='open'))toggle(panel,priorState==='open',false);
     return;
   }
   const env=sectionContext(panel,ctx),name=panelName(panel);
   // Structural position stabilizes across render, even with repeated "镜头" headings.
   const id=panel.getAttribute('data-id')||panel.getAttribute('data-shot')||panel.id||String(ordinal);
-  const key=keyFor({...env,name,position:id});
+  const stableId=panel.getAttribute('data-id')||panel.getAttribute('data-shot')||panel.id;
+  const key=keyFor({...env,name:stableId?'stable-area':name,position:id});
   panel.dataset.jbpFoldKey=key;panel.dataset.jbpFoldTitle=name;
   const bar=document.createElement('div');bar.className='jbp-fold-bar';bar.dataset.jbpFoldBar='true';
   const title=document.createElement('span');title.className='jbp-fold-label';title.textContent=name;
