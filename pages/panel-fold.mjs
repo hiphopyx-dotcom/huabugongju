@@ -136,6 +136,8 @@ function globalToolbar(target,ctx,scope){
   if(!container||container.querySelector(':scope > .jbp-fold-global'))return;
   const panelCount=findCandidates(target).length;
   const innerCount=target.querySelectorAll('[data-jbp-sub-key]').length;
+  // The canvas has one inspector: its local accordion is sufficient; do not overlay the node toolbar.
+  if(target.matches('.canvas-workspace')&&panelCount<=1)return;
   if(panelCount+innerCount<1)return;
   const bar=document.createElement('div');bar.className='jbp-fold-global';bar.dataset.jbpFoldGlobal=scope;
   const caption=document.createElement('strong');caption.textContent='分区折叠';
