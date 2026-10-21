@@ -42,9 +42,9 @@ export function buildVeoRequest(input){
   if(input.mode==='interpolate')instance.lastFrame=last;
   if(input.mode==='references')instance.referenceImages=refs.map(image=>({image,referenceType:'asset'}));
   // Veo 3.1 reference-image jobs must be 8s, and each submission is one billable video.
-  return {instances:[instance],parameters:{aspectRatio:input.ratio,durationSeconds:'8',resolution:'720p',numberOfVideos:1}};
+  return {instances:[instance],parameters:{aspectRatio:input.ratio,durationSeconds:'8',resolution:'720p',numberOfVideos:1,personGeneration:input.mode==='text'?'allow_all':'allow_adult'}};
 }
-const operationName=v=>typeof v==='string'&&/^operations\/[A-Za-z0-9_./:-]{1,220}$/.test(v);
+const operationName=v=>typeof v==='string'&&/^(?:models\/[A-Za-z0-9._-]+\/)?operations\/[A-Za-z0-9_./:-]{1,220}$/.test(v);
 const videoHost=uri=>{
   let u;try{u=new URL(uri)}catch{throw new Error('上游视频下载地址无效')}
   if(u.protocol!=='https:'||u.username||u.password||u.hash||!['generativelanguage.googleapis.com','storage.googleapis.com'].includes(u.hostname))
