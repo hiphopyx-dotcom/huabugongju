@@ -1,0 +1,29 @@
+name: Video generation preview quality gate
+on:
+  push:
+    branches: [upgrade/video-veo-pipeline-20261021]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Check browser and API syntax
+        run: |
+          node --check pages/app.mjs
+          node --check pages/veo-video.mjs
+          node --check deploy/lib/video.mjs
+          node --check deploy/api/video.js
+      - name: Run existing and video regression tests
+        run: node --test deploy/tests/*.test.mjs
+      - name: Verify deploy build
+        run: |
+          cd deploy
+          node build.mjs
+          node --check public/app.mjs
+          node --check public/veo-video.mjs
