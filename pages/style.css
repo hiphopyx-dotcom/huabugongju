@@ -59,3 +59,17 @@ button:focus-visible{outline:2px solid #d9fc6d;outline-offset:2px}button:disable
 .vs-viewer.jbp-fold-panel>.jbp-fold-bar,.vs-controls.jbp-fold-panel>.jbp-fold-bar{margin:0 0 12px}
 #modalBody>.jbp-fold-global{margin-top:20px}
 @media(max-width:720px){.jbp-fold-global{gap:6px;padding:9px}.jbp-fold-global>strong{width:100%}.jbp-fold-count{flex:1}.jbp-fold-global button{padding:6px 7px}.jbp-fold-bar{gap:7px;padding:5px 6px}.jbp-fold-label{font-size:11px}}
+
+/* Extended fold coverage: horizontal timeline and 3D shot guide preserve their native grid. */
+.jbp-fold-panel.clip-list{flex-wrap:wrap;align-content:flex-start;gap:9px}
+.jbp-fold-panel.clip-list>.jbp-fold-bar{flex:0 0 100%;position:sticky;left:0;z-index:1}
+.jbp-fold-panel.clip-list[data-jbp-fold-state="closed"]{min-height:42px;padding:5px 0}
+.jbp-fold-panel.shot>.jbp-fold-bar{grid-column:1/-1}
+.shot-guide-dialog{position:relative}
+.shot-guide-options.jbp-fold-panel>.jbp-fold-bar{grid-column:1/-1;position:sticky;top:0;z-index:2;margin:0 0 2px}
+.shot-guide-options.jbp-fold-panel{align-content:start;gap:10px}
+.shot-guide-dialog:has(.shot-guide-options[data-jbp-fold-state="closed"]){grid-template-rows:auto auto clamp(185px,33vh,350px) auto 54px auto}
+.shot-guide-options[data-jbp-fold-state="closed"]{overflow:hidden}
+#modalBody.jbp-fold-panel>.modal-close{display:block!important}
+#modalBody.jbp-fold-panel>h2{margin-top:10px}
+@media(max-width:720px){.shot-guide-options.jbp-fold-panel>.jbp-fold-bar{grid-column:1/-1}.jbp-fold-panel.clip-list>.jbp-fold-bar{min-width:100%}}
