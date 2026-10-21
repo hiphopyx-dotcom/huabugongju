@@ -215,7 +215,12 @@ function setAll(root,op){
 export function install({context}={}){
   if(typeof context==='function')lastCtx=context;
   if(observerMain)return;
-  const relevant=mutations=>{if(hasNewRelevant(mutations))schedule()};
+  const relevant=mutations=>{
+    // Account/login dialogs write directly into #modalBody without calling the app's openModal().
+    const modalReplace=mutations.some(m=>m.target?.id==='modalBody'&&
+      [...m.addedNodes].some(n=>n.nodeType===1&&!n.matches?.('.jbp-fold-bar,.jbp-fold-global')));
+    if(modalReplace||hasNewRelevant(mutations))schedule();
+  };
   const main=document.querySelector('#main'),modal=document.querySelector('#modalBody');
   observerMain=new MutationObserver(relevant);if(main)observerMain.observe(main,{childList:true,subtree:true});
   observerModal=new MutationObserver(relevant);if(modal)observerModal.observe(modal,{childList:true,subtree:true});
