@@ -35,3 +35,22 @@ test('text-only video does not silently attach private reference images',()=>{
  assert.equal(item.mode,'text');
  assert.deepEqual(item.referenceIds,[]);
 });
+
+test('project storyboard shots keep scene, cast, camera, continuity and individual shot identifiers',()=>{
+ const project=p({videoMethod:'文生视频'});
+ project.shots=[
+  {id:'shot_A',episode:'第1集',scene:'1-1 老宅 夜 内',description:'陆川扶住门框',dialogue:'陆川：账本呢？',camera:'缓慢推进',continuity:'腕上仍戴旧手表',characters:['actor1'],locations:['scene1'],duration:5},
+  {id:'shot_B',episode:'第2集',scene:'2-1 工厂 日 内',description:'周宁看向车间',firstFrame:'scene1',duration:4}
+ ];
+ const items=planVideoJobs(project,'storyboard');
+ assert.equal(items.length,2);
+ assert.equal(items[0].mode,'references');
+ assert.deepEqual(items[0].referenceIds,['actor1','scene1']);
+ assert.equal(items[0].shotId,'shot_A');
+ assert.match(items[0].prompt,/账本呢/);
+ assert.match(items[0].prompt,/旧手表/);
+ assert.match(items[0].prompt,/缓慢推进/);
+ assert.equal(items[1].mode,'start');
+ assert.equal(items[1].firstId,'scene1');
+ assert.equal(items[1].episode,'第2集');
+});
