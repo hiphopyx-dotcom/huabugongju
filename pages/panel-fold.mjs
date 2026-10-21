@@ -132,7 +132,8 @@ function enhancePanel(panel,ctx,ordinal){
   toggle(panel,decideState(read(key),defaultClosed)==='open',false);
 }
 function globalToolbar(target,ctx,scope){
-  if(!target||target.querySelector(':scope > .jbp-fold-global'))return;
+  const container=scope==='stage'?target?.querySelector('.vs-dialog'):target;
+  if(!container||container.querySelector(':scope > .jbp-fold-global'))return;
   const panelCount=findCandidates(target).length;
   const innerCount=target.querySelectorAll('[data-jbp-sub-key]').length;
   if(panelCount+innerCount<1)return;
@@ -144,7 +145,7 @@ function globalToolbar(target,ctx,scope){
     const btn=document.createElement('button');btn.type='button';btn.dataset.jbpFoldAll=op;btn.dataset.jbpFoldScope=scope;
     btn.textContent=text;bar.appendChild(btn);
   }
-  target.prepend(bar);
+  container.prepend(bar);
 }
 function applyRegion(target,ctx,scope){
   prepareTable(target);
