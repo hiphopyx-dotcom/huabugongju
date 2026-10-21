@@ -41,3 +41,14 @@ test('fold actions only change visibility, never delete or overwrite project dat
  assert.ok(src.includes('MutationObserver'));
  for(const forbidden of ['removeChild(', 'replaceChildren(', 'indexedDB.deleteDatabase'])assert.ok(!src.includes(forbidden),forbidden);
 });
+
+test('workbench page and modal render paths install fold enhancement with CSS-only hiding',()=>{
+ const app=fs.readFileSync(new URL('../../pages/app.mjs',import.meta.url),'utf8');
+ const css=fs.readFileSync(new URL('../../pages/style.css',import.meta.url),'utf8');
+ const accounts=fs.readFileSync(new URL('../../pages/accounts.mjs',import.meta.url),'utf8');
+ for(const fragment of ["import * as Fold from './panel-fold.mjs", 'Fold.install(', 'Fold.refresh()'])assert.ok(app.includes(fragment),fragment);
+ assert.ok(css.includes('[data-jbp-fold-state="closed"]>.jbp-fold-content'));
+ assert.ok(css.includes('.jbp-fold-detail-hidden'));
+ assert.ok(css.includes('.jbp-fold-global'));
+ assert.ok(accounts.includes('<h3>嵌入的图片工坊</h3>'));
+});
