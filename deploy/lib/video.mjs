@@ -158,6 +158,12 @@ export function createVideoHandler(query,config={}){
    }
    if(action==='poll'){
      if(terminal.has(job.status)||job.status==='submitting')return json({job:view(job)});
+     if(job.status==='polling'&&now-Number(job.updated)>=90000){
+       // A serverless process may have crashed during a FREE status lookup. Recover without resubmitting generation.
+       await q("UPDATE studio_video_jobs SET status='running',error_text=$1,updated=$2 WHERE id=$3 AND owner=$4 AND status='polling' AND updated<=$5",
+         '上次状态查询中断，可再次查询，无需重新生成',now,id,user.id,now-90000);
+       return json({job:view(await one('SELECT * FROM studio_video_jobs WHERE id=$1 AND owner=$2',id,user.id)),note:'已恢复超时的查询锁；5秒后可再次刷新'});
+     }
      if(job.status==='polling'||now-Number(job.updated)<5000)return json({job:view(job),note:'刷新间隔至少5秒'});
      const locked=await one("UPDATE studio_video_jobs SET status='polling',updated=$1 WHERE id=$2 AND owner=$3 AND status IN ('queued','running') AND updated<=$4 RETURNING id",
        now,id,user.id,now-5000);
