@@ -3,6 +3,7 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 const root=process.cwd(),out=path.join(root,'pages');
 await fs.mkdir(out,{recursive:true});
+await fs.cp(path.join(root,'public/studio/shot-reference'),path.join(out,'shot-reference'),{recursive:true});
 for(const name of ['model-privacy.mjs','index.html','style.css','core.mjs','db.mjs','app.mjs','accounts.mjs','asset-audit.mjs','asset-controls.mjs','script-breakdown.mjs','storyboard.mjs','shot-language.mjs','video-templates.mjs','webm-muxer.mjs','webm-muxer-LICENSE.txt','virtual-stage-export.mjs','stage-video.mjs','virtual-stage-core.mjs','virtual-stage-render.mjs','virtual-stage.mjs','shot-guide.mjs','shot-rig.mjs','shot-stage.mjs','three-LICENSE.txt','collab-core.mjs','collaboration.mjs'])await fs.copyFile(path.join(root,'public/studio',name),path.join(out,name));
 let app=await fs.readFile(path.join(out,'app.mjs'),'utf8');
 app=app.replace("import * as Cloud from './cloud.mjs';", "import * as Cloud from './cloud.mjs';\nconst GITHUB_PAGES=true;");
