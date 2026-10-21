@@ -64,13 +64,14 @@ function markItem(el,cls,yes){if(yes)el.classList.add(cls);else el.classList.rem
 function toggle(panel,open,persist=true){
   const next=open?'open':'closed';
   panel.dataset.jbpFoldState=next;
-  const button=panel.querySelector(':scope > .jbp-fold-bar > button[data-jbp-fold-toggle]');
+  const bar=[...panel.children].find(child=>child.classList.contains('jbp-fold-bar'));
+  const button=bar?.querySelector('button[data-jbp-fold-toggle]');
   if(button){button.setAttribute('aria-expanded',String(open));button.textContent=open?'▾ 收起':'▸ 展开';button.setAttribute('aria-label',(open?'收起':'展开')+(panel.dataset.jbpFoldTitle||'内容区'))}
   if(persist&&panel.dataset.jbpFoldKey)write(panel.dataset.jbpFoldKey,next);
 }
 function toggleDetail(head,open,persist=true){
   head.dataset.jbpSubState=open?'open':'closed';
-  const btn=head.querySelector(':scope > button[data-jbp-detail-toggle]');
+  const btn=head.querySelector('button[data-jbp-detail-toggle]');
   if(btn){btn.setAttribute('aria-expanded',String(open));btn.textContent=open?'▾':'▸';btn.setAttribute('aria-label',(open?'收起':'展开')+'详细设置 '+safe(head.dataset.jbpSubTitle))}
   const group=head.parentElement;
   if(group){
@@ -84,7 +85,7 @@ function toggleDetail(head,open,persist=true){
 function prepareTable(root){
   if(!root)return;
   // Tables cannot contain non-table markup, so a surrounding panel is used instead.
-  for(const table of [...root.querySelectorAll(':scope > table.line-table,:scope > table')]){
+  for(const table of [...root.children].filter(child=>child.tagName==='TABLE')){
     if(table.closest('.table-panel'))continue;
     const wrapper=document.createElement('div');
     wrapper.className='table-panel';
@@ -119,7 +120,7 @@ function sectionContext(panel,ctx){
 }
 function enhancePanel(panel,ctx,ordinal){
   if(panel.dataset.jbpFoldKey){
-    const bar=panel.querySelector(':scope > .jbp-fold-bar');
+    const bar=[...panel.children].find(child=>child.classList.contains('jbp-fold-bar'));
     if(bar){
       // Later-rendered elements must also stay hidden when the parent is collapsed.
       for(const child of [...panel.children])if(child!==bar&&!child.classList.contains('jbp-fold-content')&&!child.matches('.modal-close,h2'))child.classList.add('jbp-fold-content');
@@ -153,7 +154,7 @@ function enhancePanel(panel,ctx,ordinal){
 }
 function globalToolbar(target,ctx,scope){
   const container=scope==='stage'?target?.querySelector('.vs-dialog'):target;
-  if(!container||container.querySelector(':scope > .jbp-fold-global'))return;
+  if(!container||[...container.children].some(child=>child.classList.contains('jbp-fold-global')))return;
   const panelCount=findCandidates(target).length;
   const innerCount=target.querySelectorAll('[data-jbp-sub-key]').length;
   // The canvas has one inspector: its local accordion is sufficient; do not overlay the node toolbar.
@@ -193,8 +194,8 @@ function update(){
   const ctx=lastCtx();
   const main=document.querySelector('#main'),modal=document.querySelector('#modalBody'),stage=document.querySelector('.vs-overlay');
   if(main){
-    for(const page of main.querySelectorAll(':scope > .page'))applyRegion(page,ctx,'main');
-    const canvas=main.querySelector(':scope > .workspace.canvas-workspace');
+    for(const page of [...main.children].filter(child=>child.classList.contains('page')))applyRegion(page,ctx,'main');
+    const canvas=[...main.children].find(child=>child.classList.contains('workspace')&&child.classList.contains('canvas-workspace'));
     if(canvas)applyRegion(canvas,ctx,'main');
   }
   if(modal)applyRegion(modal,ctx,'modal');
