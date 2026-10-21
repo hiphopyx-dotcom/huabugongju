@@ -121,7 +121,7 @@ function enhancePanel(panel,ctx,ordinal){
     if(panel.dataset.jbpFoldKey===priorKey&&(priorState==='closed'||priorState==='open'))toggle(panel,priorState==='open',false);
     return;
   }
-  const env=sectionContext(panel,ctx),name=panelName(panel);
+  const env=sectionContext(panel,ctx),name=panelName(panel),scope=env.scope;
   // Structural position stabilizes across render, even with repeated "镜头" headings.
   const id=panel.getAttribute('data-id')||panel.getAttribute('data-shot')||panel.id||String(ordinal);
   const stableId=panel.getAttribute('data-id')||panel.getAttribute('data-shot')||panel.id;
