@@ -95,5 +95,15 @@ await test('dynamic unmarked controls in an existing collapsed panel are folded 
  assert.equal(box('lateControl').classList.contains('jbp-fold-content'),true);
  assert.equal(foldState(target),'closed');
 });
+await test('account dialogs inserted without app modal helper still receive fold controls',async()=>{
+ const target=box('modalBody');
+ target.innerHTML='<button class="modal-close">×</button><h2>成员登录</h2><label id="phone">手机号<input></label><label id="password">密码<input type="password"></label><button>登录</button>';
+ await tick();
+ assert.ok(foldButton(target),'expected fold control on independently-rendered account dialog');
+ foldButton(target).click();
+ assert.equal(foldState(target),'closed');
+ assert.ok(box('phone').isConnected);
+ assert.equal(target.querySelector('.modal-close').classList.contains('jbp-fold-content'),false);
+});
 console.log('ALL DOM FOLD TESTS PASSED');
 await browser.happyDOM.abort();
