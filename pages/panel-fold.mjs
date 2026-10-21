@@ -123,7 +123,7 @@ function enhancePanel(panel,ctx,ordinal){
   const bar=document.createElement('div');bar.className='jbp-fold-bar';bar.dataset.jbpFoldBar='true';
   const title=document.createElement('span');title.className='jbp-fold-label';title.textContent=name;
   const btn=document.createElement('button');btn.type='button';btn.className='jbp-fold-switch';
-  btn.dataset.jbpFoldToggle='true';btn.setAttribute('aria-controls','');btn.title='仅折叠本功能区';
+  btn.dataset.jbpFoldToggle='true';btn.title='仅折叠本功能区';
   bar.append(title,btn);panel.prepend(bar);
   // Mark existing children, not by moving them: this preserves listeners and form values.
   for(const child of [...panel.children])if(child!==bar)child.classList.add('jbp-fold-content');
