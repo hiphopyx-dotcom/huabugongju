@@ -19,6 +19,10 @@ jobs:
           node --check pages/app.mjs
       - name: Test full existing backend and section-fold behavior
         run: node --test deploy/tests/*.test.mjs
+      - name: Install isolated DOM integration harness
+        run: npm install --prefix /tmp/jbp-fold-dom --no-save --no-audit --no-fund happy-dom@20
+      - name: Test real DOM click, state persistence and modal interactions
+        run: node deploy/tests/panel-fold.dom.mjs
       - name: Build formal workbench
         run: |
           cd deploy
