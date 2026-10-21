@@ -80,7 +80,7 @@ function toggleDetail(head,open,persist=true){
 function prepareTable(root){
   if(!root)return;
   // Tables cannot contain non-table markup, so a surrounding panel is used instead.
-  for(const table of [...root.querySelectorAll(':scope > .page > table.line-table,:scope > .page > table')]){
+  for(const table of [...root.querySelectorAll(':scope > table.line-table,:scope > table')]){
     if(table.closest('.table-panel'))continue;
     const wrapper=document.createElement('div');
     wrapper.className='table-panel';
