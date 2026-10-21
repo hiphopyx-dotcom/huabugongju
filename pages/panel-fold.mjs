@@ -15,6 +15,7 @@ const SELECTOR=[
   '#modalBody .section',
   '#modalBody .asset-grid',
   '#modalBody .video-sequence',
+  '.shot-guide-overlay .shot-guide-options',
   '.vs-overlay .vs-controls',
   '.vs-overlay .vs-viewer'
 ].join(',');
@@ -27,10 +28,13 @@ const FALLBACK={
  'section':'设置与内容','asset-grid':'素材与列表','cards':'卡片列表',
  'video-sequence':'多镜头编排','video-sequence-shot':'镜头设置',
  'shot':'分镜详情','clip-list':'时间线片段','inspector':'节点属性',
- 'vs-controls':'虚拟片场操作','vs-viewer':'片场预览','table-panel':'任务列表'
+ 'vs-controls':'虚拟片场操作','vs-viewer':'片场预览','table-panel':'任务列表',
+ 'shot-guide-options':'镜头语言选项'
 };
 const safe=s=>String(s??'').trim().replace(/\s+/g,' ').slice(0,62);
 export function panelName(panel){
+  if(panel.matches('article.shot'))return safe(panel.querySelector('h3')?.textContent||'分镜详情');
+  if(panel.matches('.video-sequence-shot'))return safe(panel.querySelector(':scope > .row strong')?.textContent||'镜头设置');
   const heading=panel.querySelector(':scope > h2,:scope > h3,:scope > h4,:scope > .row h2,:scope > .row h3,:scope > header h2,:scope > header h3');
   if(heading)return safe(heading.textContent)||'内容区';
   const row=panel.querySelector(':scope > strong,:scope > .row > strong');
@@ -107,14 +111,28 @@ function findCandidates(root){
   return [...root.querySelectorAll(SELECTOR)].filter(panel=>panel.isConnected&&panel.children.length>0);
 }
 function sectionScope(panel){
-  return panel.closest('.vs-overlay')?'stage':panel.closest('#modalBody')?'modal':'main';
+  return panel.closest('.shot-guide-overlay')?'guide':panel.closest('.vs-overlay')?'stage':panel.closest('#modalBody')?'modal':'main';
 }
 function sectionContext(panel,ctx){
   const scope=sectionScope(panel),mod=document.querySelector('#modalBody > h2');
-  return {projectId:safe(ctx.projectId)||'guest',page:scope==='main'?(ctx.page||'home'):scope==='stage'?'virtual-stage':'modal-'+safe(mod?.textContent||'dialogue'),scope};
+  return {projectId:safe(ctx.projectId)||'guest',page:scope==='main'?(ctx.page||'home'):scope==='stage'?'virtual-stage':scope==='guide'?'shot-guide':'modal-'+safe(mod?.textContent||'dialogue'),scope};
 }
 function enhancePanel(panel,ctx,ordinal){
-  if(panel.dataset.jbpFoldKey)return;
+  if(panel.dataset.jbpFoldKey){
+    const bar=panel.querySelector(':scope > .jbp-fold-bar');
+    if(bar){
+      // Later-rendered elements must also stay hidden when the parent is collapsed.
+      for(const child of [...panel.children])if(child!==bar&&!child.classList.contains('jbp-fold-content')&&!child.matches('.modal-close,:scope > h2'))child.classList.add('jbp-fold-content');
+      return;
+    }
+    // An existing inspector/modal was re-rendered with innerHTML; restore controls and state.
+    const priorState=panel.dataset.jbpFoldState;
+    delete panel.dataset.jbpFoldKey;delete panel.dataset.jbpFoldTitle;
+    panel.classList.remove('jbp-fold-panel');
+    enhancePanel(panel,ctx,ordinal);
+    if(priorState==='closed'||priorState==='open')toggle(panel,priorState==='open',false);
+    return;
+  }
   const env=sectionContext(panel,ctx),name=panelName(panel);
   // Structural position stabilizes across render, even with repeated "镜头" headings.
   const id=panel.getAttribute('data-id')||panel.getAttribute('data-shot')||panel.id||String(ordinal);
@@ -126,7 +144,7 @@ function enhancePanel(panel,ctx,ordinal){
   btn.dataset.jbpFoldToggle='true';btn.title='仅折叠本功能区';
   bar.append(title,btn);panel.prepend(bar);
   // Mark existing children, not by moving them: this preserves listeners and form values.
-  for(const child of [...panel.children])if(child!==bar)child.classList.add('jbp-fold-content');
+  for(const child of [...panel.children])if(child!==bar&&!child.matches('.modal-close,:scope > h2'))child.classList.add('jbp-fold-content');
   panel.classList.add('jbp-fold-panel');
   const dense=panel.matches('.asset-grid,.cards')&&panel.children.length>12;
   const defaultClosed=scope==='main'&&(dense||ordinal>=2||panel.matches('.video-sequence,.video-sequence-shot,article.shot')) ||scope==='modal'&&ordinal>=2;
@@ -153,16 +171,20 @@ function globalToolbar(target,ctx,scope){
 function applyRegion(target,ctx,scope){
   prepareTable(target);
   const candidates=findCandidates(target);
-  let mainIndex=0,stageIndex=0,modalIndex=0;
+  let mainIndex=0,stageIndex=0,modalIndex=0,guideIndex=0;
   for(const panel of candidates){
     const inScope=sectionScope(panel);
     if(inScope!==scope)continue;
-    let ordinal=inScope==='main'?mainIndex++:inScope==='stage'?stageIndex++:modalIndex++;
+    let ordinal=inScope==='main'?mainIndex++:inScope==='stage'?stageIndex++:inScope==='guide'?guideIndex++:modalIndex++;
     enhancePanel(panel,ctx,ordinal);
     headingsIn(panel,sectionContext(panel,ctx));
   }
-  if(scope==='modal')headingsIn(target,{projectId:ctx.projectId,page:'dialogue',scope:'modal'});
-  globalToolbar(target,ctx,scope);
+  if(scope==='modal'){
+    headingsIn(target,{projectId:ctx.projectId,page:'dialogue',scope:'modal'});
+    // Lightweight dialogs without sub-sections still get a foldable content body.
+    if(!candidates.some(panel=>sectionScope(panel)==='modal')&&target.children.length>2)enhancePanel(target,ctx,0);
+  }
+  if(scope!=='guide')globalToolbar(target,ctx,scope);
 }
 let observerMain=null,observerModal=null,observerBody=null,observerStage=null;
 let scheduled=false,lastCtx=()=>({projectId:'guest',page:'home'});
@@ -176,11 +198,14 @@ function update(){
   }
   if(modal)applyRegion(modal,ctx,'modal');
   if(stage)applyRegion(stage,ctx,'stage');
+  const guide=document.querySelector('.shot-guide-overlay');
+  if(guide)applyRegion(guide,ctx,'guide');
 }
 function schedule(){if(scheduled)return;scheduled=true;queueMicrotask(()=>{scheduled=false;update()})}
 function hasNewRelevant(mutations){
   return mutations.some(m=>[...m.addedNodes].some(n=>n.nodeType===1&&(
-    n.matches?.('.page,.section,.asset-grid,.workspace,.vs-overlay,.vs-controls,.vs-viewer,.shot,.video-sequence,.table-panel,h3,h4')||
+    m.target?.closest?.('[data-jbp-fold-key]')||
+    n.matches?.('.page,.section,.asset-grid,.workspace,.vs-overlay,.shot-guide-overlay,.shot-guide-options,.vs-controls,.vs-viewer,.shot,.video-sequence,.table-panel,h3,h4')||
     n.querySelector?.('.page,.section,.asset-grid,.workspace,.vs-overlay,.vs-controls,.vs-viewer,.shot,.video-sequence')
   )));
 }
@@ -206,10 +231,10 @@ export function install({context}={}){
   observerMain=new MutationObserver(relevant);if(main)observerMain.observe(main,{childList:true,subtree:true});
   observerModal=new MutationObserver(relevant);if(modal)observerModal.observe(modal,{childList:true,subtree:true});
   observerBody=new MutationObserver(ms=>{
-    const added=ms.some(x=>[...x.addedNodes].some(n=>n.nodeType===1&&n.matches?.('.vs-overlay')));
+    const added=ms.some(x=>[...x.addedNodes].some(n=>n.nodeType===1&&n.matches?.('.vs-overlay,.shot-guide-overlay')));
     if(!added)return;
     observerStage?.disconnect();
-    const stage=document.querySelector('.vs-overlay');
+    const stage=document.querySelector('.vs-overlay,.shot-guide-overlay');
     if(stage){observerStage=new MutationObserver(relevant);observerStage.observe(stage,{childList:true,subtree:true})}
     schedule();
   });
