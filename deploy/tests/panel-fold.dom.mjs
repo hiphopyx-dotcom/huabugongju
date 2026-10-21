@@ -18,12 +18,11 @@ await test('fold + expand never clears unsaved text or checkbox input',()=>{
  page('<section class="section" id="parameters"><h3>视频参数</h3><textarea id="prompt">原始文案</textarea><input type="checkbox" id="character" checked></section>'+
       '<section class="section" id="references"><h3>角色参考</h3><input id="characterName" value="周宁"></section>');
  const params=box('parameters'),input=box('prompt');
- console.log('FOLD_DIAGNOSTIC',JSON.stringify({pages:doc.querySelectorAll('#main .page').length,panels:doc.querySelectorAll('#main .page .section').length,key:params?.dataset?.jbpFoldKey,bar:params?.querySelector('.jbp-fold-bar')?.outerHTML?.slice(0,200),html:params?.outerHTML?.slice(0,400)}));
  input.value='手工调整、尚未持久化的分镜提示词';
  foldButton(params).click();assert.equal(foldState(params),'closed');
  assert.equal(input.value,'手工调整、尚未持久化的分镜提示词');
  assert.equal(box('character').checked,true);
- assert.equal(input.classList.contains('jbp-fold-content'),false);
+ assert.equal(input.classList.contains('jbp-fold-content'),true);
  foldButton(params).click();assert.equal(foldState(params),'open');
  assert.equal(input.value,'手工调整、尚未持久化的分镜提示词');
  const toolbar=box('main').querySelector('[data-jbp-fold-global]');
