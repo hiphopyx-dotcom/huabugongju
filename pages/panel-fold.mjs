@@ -2,22 +2,9 @@
 // Folding changes visibility only: inputs, events, media and projects are never serialized or recreated.
 const PREFIX='jbp-panels-v2:';
 const SELECTOR=[
-  '#main .page .section',
-  '#main .page .split > section',
-  '#main .page .asset-grid',
-  '#main .page .cards',
-  '#main .page .video-sequence',
-  '#main .page .video-sequence-shot',
-  '#main .page article.shot',
-  '#main .page .clip-list',
-  '#main .workspace > .inspector',
-  '#main .page > .table-panel',
-  '#modalBody .section',
-  '#modalBody .asset-grid',
-  '#modalBody .video-sequence',
-  '.shot-guide-overlay .shot-guide-options',
-  '.vs-overlay .vs-controls',
-  '.vs-overlay .vs-viewer'
+  '.section','.split > section','.asset-grid','.cards','.video-sequence',
+  '.video-sequence-shot','article.shot','.clip-list','.workspace > .inspector',
+  '.table-panel','.shot-guide-options','.vs-controls','.vs-viewer'
 ].join(',');
 const PAGE_TITLES={
  home:'项目空间',models:'模型中心',cloud:'云端项目',grok:'图片生成',
