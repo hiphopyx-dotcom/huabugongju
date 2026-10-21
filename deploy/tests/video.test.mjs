@@ -89,6 +89,8 @@ test('anonymous and cross-origin users cannot start paid videos or download file
  assert.equal(memberResponse.status,201);
  const logged=await s.account('login',{phone:'13900000000',password:'12345678'});
  const member=logged.headers.get('set-cookie').split(';')[0];
+ assert.equal((await s.request('start',{...input,requestId:'another-request-22'},member)).status,403);
+ assert.equal(s.stats().started,1,'member cannot bill administrator Veo key');
  assert.equal((await s.request('poll',{id:started.job.id},member)).status,404);
  assert.equal((await s.request('download',null,member,'GET','&id='+started.job.id)).status,404);
  assert.deepEqual((await (await s.request('jobs',null,member,'GET','&projectId=project1')).json()).jobs,[]);
