@@ -133,7 +133,7 @@ function enhancePanel(panel,ctx,ordinal){
   btn.dataset.jbpFoldToggle='true';btn.title='仅折叠本功能区';
   bar.append(title,btn);panel.prepend(bar);
   // Mark existing children, not by moving them: this preserves listeners and form values.
-  for(const child of [...panel.children])if(child!==bar&&!child.matches('.modal-close,:scope > h2'))child.classList.add('jbp-fold-content');
+  for(const child of [...panel.children])if(child!==bar&&!child.matches('.modal-close,h2'))child.classList.add('jbp-fold-content');
   panel.classList.add('jbp-fold-panel');
   const dense=panel.matches('.asset-grid,.cards')&&panel.children.length>12;
   const defaultClosed=scope==='main'&&(dense||ordinal>=2||panel.matches('.video-sequence,.video-sequence-shot,article.shot')) ||scope==='modal'&&ordinal>=2;
