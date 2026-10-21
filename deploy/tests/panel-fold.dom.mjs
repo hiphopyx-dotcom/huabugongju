@@ -46,8 +46,10 @@ await test('shot collapse follows stable ID when rows are reordered',()=>{
  const markup=(a,b)=>'<article class="shot" data-id="'+a+'"><div><h3>镜头 01</h3><textarea>A</textarea></div></article>'+
    '<article class="shot" data-id="'+b+'"><div><h3>镜头 02</h3><textarea>B</textarea></div></article>';
  switchTo(markup('shot-101','shot-202'),'shots');
- const a=doc.querySelector('[data-id="shot-101"]');
- foldButton(a).click();assert.equal(foldState(a),'closed');
+ const a=doc.querySelector('[data-id="shot-101"]'),b=doc.querySelector('[data-id="shot-202"]');
+ if(foldState(a)!=='closed')foldButton(a).click();
+ if(foldState(b)!=='open')foldButton(b).click();
+ assert.equal(foldState(a),'closed');assert.equal(foldState(b),'open');
  switchTo(markup('shot-202','shot-101'),'shots');
  assert.equal(foldState(doc.querySelector('[data-id="shot-101"]')),'closed');
  assert.equal(foldState(doc.querySelector('[data-id="shot-202"]')),'open');
