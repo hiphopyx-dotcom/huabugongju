@@ -7,7 +7,7 @@ function panel({title='',classes=['section'],before=null}={}){
  const c=new Set(classes);
  return {
    querySelector:()=>title?{textContent:title}:null,
-   matches:sel=>sel.split(',').some(x=>[...c].some(cls=>x.includes(cls))),
+   matches:sel=>sel==='article.shot'?c.has('shot'):sel==='.video-sequence-shot'?c.has('video-sequence-shot'):sel.split(',').some(x=>c.has(x.trim().slice(1))),
    classList:{contains:x=>c.has(x)},
    previousElementSibling:before
  };
