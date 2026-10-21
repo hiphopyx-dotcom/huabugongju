@@ -54,8 +54,8 @@ button:focus-visible{outline:2px solid #d9fc6d;outline-offset:2px}button:disable
 .jbp-fold-panel.table-panel{overflow-x:auto}
 .jbp-fold-panel.table-panel>.jbp-fold-content{width:100%}
 .jbp-fold-panel.table-panel>.jbp-fold-bar{margin-bottom:10px}
-.canvas-workspace>.jbp-fold-global{grid-column:1/-1;margin:12px 14px 0}
-.vs-dialog .jbp-fold-global{margin:10px}
+.canvas-workspace{position:relative}.canvas-workspace>.jbp-fold-global{position:absolute;right:14px;top:8px;z-index:12;margin:0;max-width:min(540px,58%);box-shadow:0 5px 22px #0007}
+.vs-dialog>.jbp-fold-global{margin:6px 12px;flex-shrink:0;padding:7px 10px}
 .vs-viewer.jbp-fold-panel>.jbp-fold-bar,.vs-controls.jbp-fold-panel>.jbp-fold-bar{margin:0 0 12px}
 #modalBody>.jbp-fold-global{margin-top:20px}
 @media(max-width:720px){.jbp-fold-global{gap:6px;padding:9px}.jbp-fold-global>strong{width:100%}.jbp-fold-count{flex:1}.jbp-fold-global button{padding:6px 7px}.jbp-fold-bar{gap:7px;padding:5px 6px}.jbp-fold-label{font-size:11px}}
