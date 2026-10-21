@@ -5,7 +5,33 @@ const states={submitting:'提交中（不可重复）',queued:'已受理',pollin
 const modelOptions=[['veo-3.1-fast-generate-preview','Veo 3.1 Fast（快速）'],['veo-3.1-generate-preview','Veo 3.1（质量）']];
 const idList=(project,ids)=>ids.map(id=>project.assets.find(a=>a.id===id&&a.kind==='image')).filter(Boolean);
 const selectedFrames=(project,ids)=>idList(project,ids).sort((a,b)=>Number(!!b.locked)-Number(!!a.locked)).slice(0,3);
-export function planVideoJobs(project){
+export function planVideoJobs(project,source='video'){
+  if(source==='storyboard'){
+    const settings=project.settings||{},images=project.assets||[],globalPrompt=trim(settings.videoPrompt);
+    const validIds=ids=>(ids||[]).filter(id=>images.some(a=>a.id===id&&a.kind==='image'));
+    return (project.shots||[]).slice(0,2000).map((shot,index)=>{
+      const characters=validIds(shot.characters),locations=validIds(shot.locations),props=validIds(shot.props);
+      const first=validIds([shot.firstFrame])[0]||'',last=validIds([shot.lastFrame])[0]||'';
+      const extra=selectedFrames(project,[...characters,...locations,...props,...(settings.videoRefs||[])]).map(a=>a.id);
+      let mode='text',refs=[],firstId='',lastId='';
+      if(first&&last){mode='interpolate';firstId=first;lastId=last}
+      else if(first||validIds([shot.assetId])[0]){mode='start';firstId=first||validIds([shot.assetId])[0]}
+      else if(extra.length){mode='references';refs=extra}
+      const name=trim(shot.episode)||'未分集',scene=trim(shot.scene)||'未指定场景';
+      const prompt=[globalPrompt,'所属分集：'+name,'场景：'+scene,shot.description&&'画面动作：'+shot.description,
+        shot.dialogue&&'对白：'+shot.dialogue,shot.size&&'景别：'+shot.size,shot.angle&&'机位：'+shot.angle,
+        shot.camera&&'运镜：'+shot.camera,shot.continuity&&'连续性：'+shot.continuity,
+        shot.characterNames?.length&&'角色：'+shot.characterNames.join('、'),
+        shot.locationNames?.length&&'场景设定：'+shot.locationNames.join('、'),
+        shot.sourceText&&'原文约束：'+shot.sourceText.slice(0,300),
+        '保持已锁定角色外貌、服装、发型与场景布局；不随意增加人物、不越轴、动作方向与上一镜一致。']
+        .filter(Boolean).join('\n').slice(0,3200);
+      return {shotId:shot.id,shotLabel:name+' · '+scene+' · '+(index+1)+'号分镜',
+        episode:name,mode,firstId,lastId,refIds:refs,
+        referenceIds:[...new Set([firstId,lastId,...refs].filter(Boolean))],
+        duration:8,requestedDuration:Number(shot.duration)||5,prompt,ratio:shot.ratio||settings.videoRatio||'9:16'};
+    });
+  }
   const s=project.settings||{},ratio=s.videoRatio||'16:9',refIds=Array.isArray(s.videoRefs)?s.videoRefs:[],method=s.videoMethod||'图生视频';
   const title=project.title||'未命名作品',prompt=trim(s.videoPrompt);
   const normalize=(shot,index)=>{
@@ -60,10 +86,12 @@ function dataUrl(blob){return new Promise((resolve,reject)=>{const r=new FileRea
 export function createVideoHub({getProject,getAccount,change,flush,openModal,toast,addClip}){
   let rows=[],configured=false,busy=false,opened=false,chosen=new Set(),note='',model=modelOptions[0][0],previewUrl='',openedProject='';
   const p=()=>getProject();
-  const plans=()=>planVideoJobs(p());
+  const plans=()=>planVideoJobs(p(),source);
   const render=()=>{
     if(!opened)return;
-    const current=plans(),list=current.map((v,i)=>'<label class="field"><input type="checkbox" data-veo-check="'+i+'" '+(chosen.has(i)?'checked':'')+' style="width:auto"> '+esc(v.shotLabel)+' · '+esc(v.mode)+' · '+esc(v.requestedDuration)+'秒目标（单次生成8秒）</label>').join('');
+    const current=plans(),episodes=[...new Set(current.map(x=>x.episode).filter(Boolean))];
+    const visible=current.map((v,i)=>({v,i})).filter(({v})=>!episodeFilter||v.episode===episodeFilter).slice(0,100);
+    const list=visible.map(({v,i})=>'<label class="field"><input type="checkbox" data-veo-check="'+i+'" '+(chosen.has(i)?'checked':'')+' style="width:auto"> '+esc(v.shotLabel)+' · '+esc(v.mode)+' · '+esc(v.requestedDuration)+'秒目标（单次生成8秒）</label>').join('');
     const cards=rows.map(r=>{
       const done=r.status==='succeeded';
       return '<article class="section" style="margin:10px 0"><div class="row wrap"><strong>'+esc(r.shotLabel||'整体视频')+'</strong><span class="spacer"></span><small>'+esc(states[r.status]||r.status)+'</small></div><small>'+esc(r.model)+' · '+esc(r.duration)+'秒 · '+new Date(r.created).toLocaleString('zh-CN')+'</small>'+
@@ -74,6 +102,8 @@ export function createVideoHub({getProject,getAccount,change,flush,openModal,toa
     }).join('');
     openModal('<h2>Veo 视频批量生成 · 镜头任务</h2><p class="muted">每个镜头独立生成，不是把多个镜头一次提交给模型。参考图可压缩上传；人物一致性仍需人工审核。单次Veo生成8秒，目标5秒镜头可在时间线裁切。</p>'+
       (!configured?'<p class="notice">Veo API 未配置或服务端未上线。此处不提供假生成：请管理员设置 GEMINI_API_KEY 并完成数据库迁移。</p>':'<p class="notice">已检测到服务端密钥配置；实际是否有Veo使用权限需真实请求验证，提交会产生API费用。</p>')+
+      '<label class="field">生成来源<select data-veo-source><option value="storyboard" '+(source==='storyboard'?'selected':'')+'>项目分镜表（逐镜）</option><option value="video" '+(source==='video'?'selected':'')+'>视频页镜头编排</option></select></label>'+
+      (source==='storyboard'&&episodes.length?'<label class="field">筛选分集<select data-veo-episode>'+episodes.map(name=>'<option value="'+esc(name)+'" '+(episodeFilter===name?'selected':'')+'>'+esc(name)+'</option>').join('')+'</select></label>':'')+
       '<label class="field">视频模型<select data-veo-model>'+modelOptions.map(([id,label])=>'<option value="'+esc(id)+'" '+(id===model?'selected':'')+'>'+esc(label)+'</option>').join('')+'</select></label>'+
       '<section class="section"><h3>待生成镜头</h3>'+list+'<div class="row wrap"><button data-veo-action="all" type="button">选全部</button><button data-veo-action="none" type="button">清空选择</button><button data-veo-action="submit" '+(!configured||busy?'disabled':'')+'>确认提交（单次最多3镜）</button></div></section>'+
       (note?'<p class="notice">'+esc(note)+'</p>':'')+
@@ -88,7 +118,7 @@ export function createVideoHub({getProject,getAccount,change,flush,openModal,toa
   };
   async function start(){
     if(!getAccount()){toast('请先在正式工作台登录手机号账户');return}
-    openedProject=p().id;chosen=new Set(plans().map((_,i)=>i).slice(0,3));note='';opened=true;
+    openedProject=p().id;source=p().shots?.length?'storyboard':'video';episodeFilter=source==='storyboard'?trim(p().shots[0]?.episode)||'未分集':'';chosen=new Set(plans().map((v,i)=>({v,i})).filter(x=>!episodeFilter||x.v.episode===episodeFilter).slice(0,3).map(x=>x.i));note='';opened=true;
     try{await refresh()}catch(e){note=e.message;configured=false;render()}
   }
   async function submit(){
@@ -138,7 +168,7 @@ export function createVideoHub({getProject,getAccount,change,flush,openModal,toa
     const j=job(id);
     if(!j||j.status!=='succeeded'||j.projectId!==p().id)throw Error('只有本项目成功生成的视频可导入');
     if(p().videoImports?.[id])return toast('该镜头已经导入本项目，避免重复');
-    if(j.shotId&&!p().settings.videoShots?.some(s=>s.id===j.shotId)){
+    if(j.shotId&&!p().settings.videoShots?.some(s=>s.id===j.shotId)&&!p().shots?.some(s=>s.id===j.shotId)){
       if(!confirm('原镜头编排已变更。仍要把旧结果作为独立视频素材导入时间线吗？'))return;
     }
     if(!confirm('已经观看并检查视频质量，确定将这一版加入项目素材库及时间线？'))return;
@@ -153,7 +183,7 @@ export function createVideoHub({getProject,getAccount,change,flush,openModal,toa
       if(live.id!==openedProject||live.videoImports?.[id])throw Error('项目切换或任务已经导入');
       live.assets.push(asset);
       live.videoImports={...(live.videoImports||{}),[id]:asset.id};
-      addClip(asset,{duration:Math.min(j.duration,Math.max(.1,Number(plans().find(x=>x.shotId===j.shotId)?.requestedDuration)||j.duration)),
+      addClip(asset,{duration:Math.min(j.duration,Math.max(.1,Number([...planVideoJobs(p(),'storyboard'),...planVideoJobs(p(),'video')].find(x=>x.shotId===j.shotId)?.requestedDuration)||j.duration)),
         name:j.shotLabel});
     });
     await flush();
@@ -162,6 +192,8 @@ export function createVideoHub({getProject,getAccount,change,flush,openModal,toa
   document.addEventListener('change',e=>{
     if(e.target.matches('[data-veo-check]')){const index=Number(e.target.dataset.veoCheck);e.target.checked?chosen.add(index):chosen.delete(index)}
     if(e.target.matches('[data-veo-model]'))model=e.target.value;
+    if(e.target.matches('[data-veo-source]')){source=e.target.value;episodeFilter=source==='storyboard'?plans()[0]?.episode||'':'';chosen.clear();render()}
+    if(e.target.matches('[data-veo-episode]')){episodeFilter=e.target.value;chosen.clear();render()}
   });
   document.addEventListener('click',async e=>{
     const btn=e.target.closest('[data-veo-action]');if(!btn)return;
@@ -169,7 +201,7 @@ export function createVideoHub({getProject,getAccount,change,flush,openModal,toa
     const action=btn.dataset.veoAction,id=btn.dataset.id;
     try{
       if(action==='back'){render();return}
-      if(action==='all'){chosen=new Set(plans().map((_,i)=>i));render();return}
+      if(action==='all'){chosen=new Set(plans().map((v,i)=>({v,i})).filter(x=>!episodeFilter||x.v.episode===episodeFilter).slice(0,100).map(x=>x.i));render();return}
       if(action==='none'){chosen.clear();render();return}
       if(action==='submit'){await submit();return}
       if(action==='refresh'){await refresh();return}
