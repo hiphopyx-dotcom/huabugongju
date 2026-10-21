@@ -21,3 +21,14 @@ test('鼠标经过和键盘聚焦不改变演示选择，点击才固定选项',
  guide.open({project:C.project(),subject:{lighting:'自然光'},key:'lighting',onApply:(k,v)=>applied=[k,v]});events.click({target:target('伦勃朗光')});for(const type of ['pointerover','focusin'])events[type]?.({target:target('霓虹光')});apply();assert.deepEqual(applied,['lighting','伦勃朗光']);
  }finally{guide.close();globalThis.document=previous;}
 });
+
+test('光影、风格化与特殊摄影的所有缩略图均使用已打包的有效本站JPEG',async()=>{
+ const {readFile}=await import('node:fs/promises'),guide=await import('../public/studio/shot-guide.mjs');
+ for(const [key,,options] of SB.groups.slice(4))for(const option of options){
+  const html=guide.thumbnail(option.id,key),src=html.match(/src="([^"]+)"/)[1];
+  assert.ok(src.startsWith('./shot-reference/'));assert.doesNotMatch(html,/https?:|api\/reference/);
+  const data=await readFile(new URL('../public/studio/'+decodeURIComponent(src.slice(2)),import.meta.url));
+  assert.equal(data.readUInt16BE(0),0xffd8);assert.equal(data.readUInt16BE(data.length-2),0xffd9);
+  assert.ok(data.length>1000,option.id);
+ }
+});

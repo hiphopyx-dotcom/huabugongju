@@ -1,2 +1,7 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import {reference} from '../lib/reference.mjs';
-test('教学图片通过本站返回内容，拒绝任意代理地址和上游错误细节',async()=>{let calls=0;const fetchImage=async(url,options)=>{calls++;assert.equal(options.redirect,'error');assert.match(url,/\/shot-guide\/plate-loc.jpg$/);assert.equal(options.headers,undefined);return new Response(new Uint8Array([255,216,255,217]),{headers:{'content-type':'image/jpeg','location':'https://private.test/'}})};const ok=await reference(new Request('https://studio.test/api/reference?id=plate-loc'),fetchImage);assert.equal(ok.status,200);assert.equal(ok.headers.get('location'),null);assert.equal(ok.headers.get('content-type'),'image/jpeg');assert.equal((await ok.arrayBuffer()).byteLength,4);const bad=await reference(new Request('https://studio.test/api/reference?id=https://evil.test/'),fetchImage);assert.equal(bad.status,404);assert.equal(calls,1);const failed=await reference(new Request('https://studio.test/api/reference?id=plate-loc'),async()=>{throw Error('private provider endpoint')});assert.equal(failed.status,503);assert.doesNotMatch(await failed.text(),/provider|private/);});
+test('旧教学图片地址仅跳转本站打包资源，拒绝任意代理地址',async()=>{
+ const ok=await reference(new Request('https://studio.test/api/reference?id=plate-loc'));
+ assert.equal(ok.status,307);assert.equal(ok.headers.get('location'),'/shot-reference/plate-loc.jpg');
+ for(const id of ['https://evil.test/','../secret','不存在'])assert.equal((await reference(new Request('https://studio.test/api/reference?id='+encodeURIComponent(id)))).status,404);
+ assert.equal((await reference(new Request('https://studio.test/api/reference?id=plate-loc',{method:'POST'}))).status,404);
+});
