@@ -3,7 +3,7 @@
 const PREFIX='jbp-panels-v2:';
 const SELECTOR=[
   '.section','.split > section','.asset-grid','.cards','.video-sequence',
-  '.video-sequence-shot','article.shot','.clip-list','.workspace > .inspector',
+  '.video-sequence-shot','article.shot','.clip-list','.inspector',
   '.table-panel','.shot-guide-options','.vs-controls','.vs-viewer'
 ].join(',');
 const PAGE_TITLES={
