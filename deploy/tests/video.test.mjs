@@ -113,3 +113,19 @@ test('download URLs may only come from allowlisted Google video hosts',async()=>
  const denied=await s.request('download',null,auth,'GET','&id='+job.id);
  assert.notEqual(denied.status,200);
 });
+
+test('crashed status poll can recover after 90 seconds without new paid generation',async()=>{
+ const s=setup(),auth=await admin(s);
+ const job=(await (await s.request('start',input,auth)).json()).job;
+ s.db.prepare("UPDATE studio_video_jobs SET status='polling',updated=$at WHERE id=$id").run({$at:Date.now()-100000,$id:job.id});
+ s.advance(1000);
+ const reset=await s.request('poll',{id:job.id},auth);
+ assert.equal(reset.status,200);
+ assert.equal((await reset.json()).job.status,'running');
+ assert.equal(s.stats().started,1);
+ s.advance(6000);
+ const probe=await s.request('poll',{id:job.id},auth);
+ assert.equal(probe.status,200);
+ assert.equal(s.stats().polled,1);
+ assert.equal(s.stats().started,1);
+});
