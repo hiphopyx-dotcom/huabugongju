@@ -9,7 +9,7 @@ doc.body.innerHTML='<main id="main"></main><div id="modalBody"></div>';
 Fold.install({context:()=>context});
 const tick=()=>new Promise(r=>setTimeout(r,35));
 function box(id){return doc.getElementById(id)}
-function foldButton(el){return el.querySelector(':scope > .jbp-fold-bar > [data-jbp-fold-toggle]')}
+function foldButton(el){return el.querySelector('.jbp-fold-bar > [data-jbp-fold-toggle]')}
 function foldState(el){return el.dataset.jbpFoldState}
 function page(text){box('main').innerHTML='<div class="page">'+text+'</div>';Fold.refresh()}
 function switchTo(text,which='video'){context.page=which;page(text)}
