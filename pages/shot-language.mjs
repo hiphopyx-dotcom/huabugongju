@@ -1,4 +1,4 @@
-/** 景别：画框里装多少，不是机位高低。Grok 认 close-up / wide establishing。 */
+/** 景别：画框里装多少，不是机位高低。模型使用 close-up / wide establishing。 */
 export const SHOT_SIZES = [
   { id: "极端特写", label: "极端特写", prompt: "extreme close-up shot" },
   { id: "特写", label: "特写", prompt: "close-up shot" },
@@ -41,7 +41,7 @@ export const COMPOSITIONS = [
 ];
 
 /**
- * 运镜：镜头怎么动。只保留 Grok Imagine 吃得准的词：
+ * 运镜：镜头怎么动。使用明确的运镜词：
  * pan / tilt / zoom / dolly / tracking / orbit / aerial / handheld / static / push-in
  */
 export const CAMERA_MOVES = [
@@ -55,6 +55,7 @@ export const CAMERA_MOVES = [
   { id: "上摇镜头", label: "上摇镜头", prompt: "tilt up" },
   { id: "下摇镜头", label: "下摇镜头", prompt: "tilt down" },
   { id: "360度环绕拍摄", label: "360度环绕", prompt: "camera orbiting 360 degrees, surround" },
+  { id: "斯坦尼康跟拍", label: "斯坦尼康跟拍", prompt: "Steadicam tracking shot, smooth continuous subject following, stable horizon, constant focal length, no handheld shake" },
   { id: "跟随拍摄", label: "跟随拍摄", prompt: "tracking follow shot" },
   { id: "旋转镜头", label: "旋转镜头", prompt: "camera orbit around subject" },
   { id: "变焦放大", label: "变焦放大", prompt: "zoom in" },

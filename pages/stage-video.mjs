@@ -1,4 +1,4 @@
-import * as V from './virtual-stage-core.mjs?v=0da1e756dbc7';
+import * as V from './virtual-stage-core.mjs?v=5418c6400313';
 // Deliberately local and deterministic: this creates an editable blocking draft, not AI geometry.
 export function planStage({brief='',duration=5,shot={},assets=[]}={}){
  const text=String(brief||[shot.scene,shot.description].filter(Boolean).join('，')).slice(0,8000);
@@ -17,6 +17,7 @@ export function planStage({brief='',duration=5,shot={},assets=[]}={}){
  if(/夜|晚上/.test(text))scene.lighting='night';else if(/暖|黄昏/.test(text))scene.lighting='warm';
  for(const k of scene.keyframes){if(/俯拍/.test(shot.angle||text))k.y=5;if(/仰拍/.test(shot.angle||text))k.y=.6;const focal=Number(shot.focalLength);if(focal>=12&&focal<=135)k.focal=focal;else if(/特写|近景/.test(shot.size||''))k.focal=85;}
  const actor=scene.objects.find(o=>o.type==='person');if(actor){if(/行走|走向|走过|走进|跟拍/.test(text))V.setActorMotion(scene,actor.id,'walk');else if(/转身/.test(text))V.setActorMotion(scene,actor.id,'turn')}
+ if(/斯坦尼康|steadicam/i.test(camera)&&actor){if(!actor.motionKeys)V.setActorMotion(scene,actor.id,'walk');V.generateSteadicam(scene,actor.id);}
  return {scene:V.normalizeStage(scene),brief:text,template};
 }
 const ratioSize=ratio=>ratio==='9:16'?[720,1280]:ratio==='1:1'?[960,960]:[1280,720];

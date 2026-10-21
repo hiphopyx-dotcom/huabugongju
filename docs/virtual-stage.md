@@ -73,3 +73,15 @@ stage-video.mjs保存精确片场快照与画幅作为参考版本。修改场�
 按用户选择优先准备Grok网页交接：复制提示词、下载参考与预演、打开官方Imagine、导入真实结果后进入时间线。请求保持未提交状态；文字工作端OAuth不等于视频API授权，网页跳转不能切换或核验官方账号。官方视频API需要独立密钥及计费，当前未配置、未调用，不收集浏览器Cookie或OAuth令牌。白模预演标注为参考而非AI成片。
 
 验收：新增布景、完整媒体绑定、旧参考失效、多镜头独立性、机位提示冲突消除、原子交接及跨项目回调拒绝测试。浏览器验证5秒WebM生成与播放、PNG绑定和刷新保存；未调用付费AI视频生成。
+
+### Steadicam follow and independent paths
+
+`斯坦尼康跟拍` is available in shot/video camera language and the virtual set template. Draw the actor route in blue, then draw a separate camera route in green, or generate a behind/front/side offset route with a 1–8m distance. Generation requires an existing walking route and never replaces the actor route. Camera routes remain editable after generation. Both use the scene timeline; duration fitting, scene JSON, presets, preview encoding and video request snapshots retain tracking metadata.
+
+Tracking uses monotone cubic Hermite interpolation for continuous waypoint velocity without coordinate overshoot. It aims at the selected actor's upper body, holds the horizon level and keeps the initial focal length. The plan view samples these same curves. There is no automatic obstacle avoidance; review walls and intersecting routes in preview. Existing scenes without tracking retain their original interpolation.
+
+### Member-facing model privacy
+
+Member UI uses generic model terminology. Provider web handoff, execution account labels and external embedded model pages are administrator-only. Member login responses omit underlying account fields; failed tasks, request exports and shared collaboration documents strip internal routing/account credentials. Creative prompts and generated content are preserved verbatim. Fixed public teaching images are served through a same-origin allowlisted image endpoint, without upstream cookies, redirects or error details.
+
+Do not add provider names, provider login URLs, internal account emails or raw upstream errors to member screens, responses, downloads or shared documents. Provider credentials and routing remain server-side. A frontend label change alone is not an access-control boundary.

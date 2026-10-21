@@ -1,5 +1,5 @@
-import * as C from './core.mjs?v=0da1e756dbc7';
-import {groups} from './storyboard.mjs?v=0da1e756dbc7';
+import * as C from './core.mjs?v=5418c6400313';
+import {groups} from './storyboard.mjs?v=5418c6400313';
 
 const MAX_TEXT=300000,MAX_XML=6000000;
 export const escape=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -131,7 +131,7 @@ export function create({getProject,getUser,request,change,stateChange=change,ope
   const token=stamp(),script=p.script,parts=batches(script);const d=dialog;
   const status=await request('status');if(!current(token)||getProject().script!==script||d!==dialog)return;
   setup={...token,script,parts,requestId:C.uid()};const admin=getUser().role==='admin',workers=(status.workers||[]).filter(w=>w.active),completed=new Set((p.scriptBreakdownApplied||[]).map(r=>r.key));if(p.scriptBreakdown?.applied)completed.add(batchKey(p.scriptBreakdown.batch));const next=parts.findIndex(b=>!completed.has(batchKey(b)));
-  show(`<h2>AI 拆分镜头</h2><p>逐场拆分并保留原文，先核对后写入项目。全文分为 ${parts.length} 批；每次只提交选中的一批，按顺序追加即可。已加入的批次会标记，默认选择下一批。</p><label class="field">拆分范围<select id="breakdownPart">${parts.map((b,i)=>`<option value="${i}" ${i===Math.max(0,next)?'selected':''}>${completed.has(batchKey(b))?'✓ 已加入 · ':''}${i+1}/${parts.length} · ${escape(b.label)}（${b.lines.length}行）</option>`).join('')}</select></label>${admin?`<label class="field">执行生成的账号<select id="breakdownAccount"><option value="">请选择已连接账号</option>${workers.map(w=>`<option value="${escape(w.id)}" ${w.online?'':'disabled'}>${escape(w.label)} · ${w.online?'已连接':'离线'}</option>`).join('')}</select></label>`:`<p class="notice">使用管理员分配给你的生成账号 · ${status.online?'Mac 已连接':'Mac 离线，请联系管理员启动工作端'}</p>`}<p class="notice">提交会把选中原文发送到对应账号的 Grok，消耗该账号额度。关闭窗口不会取消；失败不会自动重复付费调用。模型拆分后的画面仍需人工核对。</p><label class="field"><span><input id="breakdownRedo" type="checkbox"> 重新生成已加入的批次（会再次消耗额度）</span></label><p id="breakdownError" role="alert" class="form-error"></p><button data-breakdown="submit" class="primary" ${!admin&&!status.online?'disabled':''}>提交本批 AI 拆镜</button>`);
+  show(`<h2>AI 拆分镜头</h2><p>逐场拆分并保留原文，先核对后写入项目。全文分为 ${parts.length} 批；每次只提交选中的一批，按顺序追加即可。已加入的批次会标记，默认选择下一批。</p><label class="field">拆分范围<select id="breakdownPart">${parts.map((b,i)=>`<option value="${i}" ${i===Math.max(0,next)?'selected':''}>${completed.has(batchKey(b))?'✓ 已加入 · ':''}${i+1}/${parts.length} · ${escape(b.label)}（${b.lines.length}行）</option>`).join('')}</select></label>${admin?`<label class="field">执行生成的账号<select id="breakdownAccount"><option value="">请选择已连接账号</option>${workers.map(w=>`<option value="${escape(w.id)}" ${w.online?'':'disabled'}>${escape(w.label)} · ${w.online?'已连接':'离线'}</option>`).join('')}</select></label>`:`<p class="notice">使用管理员分配给你的生成账号 · ${status.online?'模型服务已连接':'模型服务离线，请联系管理员'}</p>`}<p class="notice">提交会把选中原文发送到已分配的模型，消耗该账号额度。关闭窗口不会取消；失败不会自动重复付费调用。模型拆分后的画面仍需人工核对。</p><label class="field"><span><input id="breakdownRedo" type="checkbox"> 重新生成已加入的批次（会再次消耗额度）</span></label><p id="breakdownError" role="alert" class="form-error"></p><button data-breakdown="submit" class="primary" ${!admin&&!status.online?'disabled':''}>提交本批 AI 拆镜</button>`);
  }
  async function submit(){
   if(!setup||!current(setup)||getProject().script!==setup.script)throw Error('剧本、项目或账号已变更，请重新打开 AI 拆镜');
