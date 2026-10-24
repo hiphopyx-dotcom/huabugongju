@@ -47,9 +47,10 @@ export function buildHandoff(project,options={}){
  let source='',heading='',sourceKey=scope==='full'?'全文':choice.key;
  let sourceLabel=scope==='full'?'全文':choice.label;
  if(kind==='next'){
-  const last=parts.slice(-2);
+  const at=scope==='full'?parts.length-1:parts.indexOf(choice);
+  const last=parts.slice(Math.max(0,at-1),at+1);
   source=clipSource(last.map(p=>p.text).join('\n'),16000);
-  heading='继续写下一集：先核对现有人物动机、上一集结局和未回收伏笔；创作全新一集，不重写已有集数。';
+  heading='继续写紧随“'+choice.label+'”之后的下一集：先核对人物动机、上一集结局和未回收伏笔；写全新的一集，不重写已有集数。';
  }else if(kind==='outline'){
   source=scope==='full'?script:choice.text;
   heading='根据参考内容生成独立的故事大纲、人物小传和分集规划；不要擅自篡改既定人物和已发生事件。';
@@ -175,7 +176,7 @@ export function createChatGPTBridge({document,getProject,change,flush,openModal,
     scriptSnapshot:prepared.scriptSnapshot,created:Date.now(),chatUrl:target};
   // Call clipboard write and open window in the same user gesture. Never place script text in the URL.
   const pending=clipboardWrite(prepared.prompt);
-  const tab=window.open(target,'_blank','noopener,noreferrer');
+  window.open(target,'_blank','noopener,noreferrer');
   change(()=>{
     const live=project();
     if(live.id!==current.id||live.script!==prepared.scriptSnapshot)throw Error('打开交接时工作台剧本已变化');
@@ -183,8 +184,9 @@ export function createChatGPTBridge({document,getProject,change,flush,openModal,
   },false);
   activeId=entry.id;copyOk=await pending;
   error=copyOk?'':'浏览器阻止自动复制。请点击“仅复制交接内容”，或从预览框手动复制后粘贴到ChatGPT。';
-  if(!tab)error+=(error?' ':'')+'浏览器可能拦截新窗口，请手动打开 https://chatgpt.com/';
-  toast(copyOk?'已准备好交接包；在ChatGPT聊天框粘贴并自行发送':'ChatGPT已尝试打开；请检查剪贴板权限');
+  // Browsers commonly return null for a successfully opened noopener tab.
+  // Never infer a popup blocker from that return value. The URL is safe to open manually.
+  toast(copyOk?'已复制剧本交接包。请在ChatGPT粘贴并自行发送；若未跳转，请手动打开ChatGPT。':'已尝试打开ChatGPT，请从预览框手动复制提示词');
   render();
  }
  async function saveResult(){
@@ -217,7 +219,7 @@ export function createChatGPTBridge({document,getProject,change,flush,openModal,
     record.adoptedCandidateId=candidate.id;
   },false);
   await flush();
-  error='已人工采纳并保存正式剧本。可关闭窗口后检查剧本页，或通过撤回恢复修改前内容。';render();
+  error='已人工采纳并保存正式剧本。可关闭窗口检查剧本页，必要时点击“同步剧本节点”；也可通过撤回恢复修改前内容。';render();
  }
  document.addEventListener('change',event=>{
   const type=event.target?.dataset?.gptChange;if(!type)return;
