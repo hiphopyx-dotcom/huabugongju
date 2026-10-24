@@ -223,7 +223,7 @@ export function createChatGPTBridge({document,getProject,change,flush,openModal,
     const record=live.chatgptHandoffs.find(x=>x.id===h.id);
     record.adoptedAt=Date.now();
     record.adoptedCandidateId=candidate.id;
-  },false);
+  });
   await flush();
   error='已人工采纳并保存正式剧本。可关闭窗口检查剧本页，必要时点击“同步剧本节点”；也可通过撤回恢复修改前内容。';render();
  }
