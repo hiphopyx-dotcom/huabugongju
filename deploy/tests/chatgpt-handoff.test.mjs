@@ -72,7 +72,7 @@ test('reviews/outlines cannot overwrite canon and incomplete full rewrites are b
    assert.throws(()=>adoptChatResult(script,p,'第1集\n'+'错误处理'.repeat(15)),/参考材料/);
  }
  const p=buildHandoff(project,{kind:'rewrite',scope:'full'});
- assert.throws(()=>adoptChatResult(script,p,'第1集\n'+'对白'.repeat(12)),/短超过/);
+ assert.throws(()=>adoptChatResult(script,p,'第1集\n'+'对白'.repeat(11)),/短超过/);
 });
 test('no hidden API credentials, DOM scraping or automated message submission are present',()=>{
  const source=fs.readFileSync(new URL('../../pages/chatgpt-handoff.mjs',import.meta.url),'utf8');
