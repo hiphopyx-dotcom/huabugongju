@@ -43,6 +43,9 @@ export function buildHandoff(project,options={}){
  const title=safeTitle(project?.title)||'未命名剧本';
  const genre=safeTitle(project?.settings?.genre||''),words=safeTitle(project?.settings?.words||'');
  const rule=String(project?.settings?.writing||'').trim().slice(0,4500);
+ const assetInfo=(project?.assets||[]).filter(a=>['角色','场景','道具'].includes(a.type)).slice(0,35)
+  .map(a=>[safeTitle(a.name),safeTitle(a.type),String(a.description||'').trim().slice(0,160),a.locked?'已锁定设定':''].filter(Boolean).join(' · ')).join('\n');
+ const episodeNames=(project?.episodes||[]).slice(0,100).map(e=>safeTitle(e.name)).filter(Boolean).join('、');
  const requirement=String(options.requirement||'').trim().slice(0,3000);
  let source='',heading='',sourceKey=scope==='full'?'全文':choice.key;
  let sourceLabel=scope==='full'?'全文':choice.label;
@@ -70,6 +73,8 @@ export function buildHandoff(project,options={}){
   genre?'题材：'+genre:'',
   words?'单集长度：'+words:'',
   rule?'用户确认的创作约束：\n'+rule:'',
+  episodeNames?'当前项目登记的分集（只用于核对顺序，不等于提供了完整正文）：'+episodeNames:'',
+  assetInfo?'角色、场景、道具资产的文字设定（只传名称和描述，不传图像二进制）：\n'+assetInfo:'',
   '剧本必须可拍可执行：按原文既定人物、事件与时代背景处理；人物称呼和逻辑一致；对白生活化，动作写在△动作行，人物姓名后括号仅写情绪或语气；同场连续△动作合并，不能靠重复台词和无故空降人物凑集数。开头有明确冲突，每集结尾保留实质悬念。',
   '如涉及40集、60集、80集等不同版本，保持当前作品的独立版本线；不得拿其它版本内容直接覆盖。',
   heading,
