@@ -62,6 +62,7 @@ assert.ok(doc.querySelector('#modalBody').textContent.includes('只允许'));
 console.log('PASS reject unsafe ChatGPT destinations without opening links');
 // Simulate simultaneous manual editing after exporting to ChatGPT.
 bridge.open();await choose('#gptKind','rewrite');await choose('#gptPart','第2集#1');
+await set('#gptChatUrl','');
 await click('[data-gpt-act="handoff"]');
 assert.equal(opens.length,2);
 await click('[data-gpt-act="resume"]');
