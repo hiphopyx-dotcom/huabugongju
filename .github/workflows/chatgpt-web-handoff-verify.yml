@@ -1,0 +1,27 @@
+name: ChatGPT web handoff integration
+on:
+  push:
+    branches: [upgrade/chatgpt-web-script-handoff-20261024]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Static syntax checks
+        run: |
+          node --check pages/app.mjs
+          node --check pages/chatgpt-handoff.mjs
+      - name: Run full existing and bridge tests
+        run: node --test deploy/tests/*.test.mjs
+      - name: Build preview workbench
+        run: |
+          cd deploy
+          node build.mjs
+          node --check public/app.mjs
+          node --check public/chatgpt-handoff.mjs
