@@ -211,6 +211,7 @@ export function createChatGPTBridge({document,getProject,change,flush,openModal,
  async function adopt(){
   const h=active(),candidate=project().chatgptCandidates?.find(r=>r.id===h?.resultId);
   if(!h||!candidate)throw Error('请先保存候选稿');
+  if(candidateText.trim()!==candidate.text)throw Error('候选编辑框内容已修改，请先点“保存为候选稿”，再人工采纳最新版本');
   if(h.projectId!==project().id)throw Error('交接记录属于其他项目');
   if(!['next','rewrite'].includes(h.kind))throw Error('大纲和质量诊断不可直接覆盖剧本正文');
   const result=adoptChatResult(project().script,h,candidate.text);
