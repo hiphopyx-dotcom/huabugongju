@@ -94,7 +94,7 @@ export function adoptChatResult(script,handoff,candidate){
    return current.trimEnd()+(current.trim()?'\n\n':'')+output+'\n';
  }
  if(handoff.scope==='full'){
-   if(current.length>100&&output.length<current.length*.55)throw Error('新全文比原稿短超过45%，请核对是否只生成了一部分，不能直接覆盖');
+   if(current.length>50&&output.length<current.length*.55)throw Error('新全文比原稿短超过45%，请核对是否只生成了一部分，不能直接覆盖');
    return output+'\n';
  }
  const part=parts.find(p=>p.key===handoff.sourceKey);
