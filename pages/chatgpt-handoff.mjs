@@ -157,7 +157,7 @@ export function createChatGPTBridge({document,getProject,change,flush,openModal,
    '<label class="field">额外创作要求<textarea id="gptRequirement" rows="3" placeholder="例如：加强前十集钩子，不改动原卡点。">'+esc(requirement)+'</textarea></label>'+
    '<label class="field">ChatGPT 目标聊天链接（选填）<input id="gptChatUrl" value="'+esc(chatUrl)+'" placeholder="留空：打开新聊天；也可填 chatgpt.com/c/已有聊天ID"></label>'+
    '<p class="muted">ChatGPT 网页是否已登录取决于你当前浏览器的会话，剧爆棚不会代你登录。完整剧本较长时建议逐集交接。</p>'+
-   (warning?'<div class="notice">'+esc(warning)+'</div>':'')+
+   '<div id="gptWarning" class="notice" '+(warning?'':'hidden')+'>'+esc(warning)+'</div>'+
    '<label class="field">交接内容预览<textarea id="gptPreview" readonly style="min-height:180px">'+esc(preview)+'</textarea></label>'+
    '<div class="row wrap"><button data-gpt-act="copy" '+(!preview?'disabled':'')+'>仅复制交接内容</button>'+
    '<button data-gpt-act="handoff" class="primary" '+(!preview?'disabled':'')+'>复制并打开 ChatGPT ↗</button>'+
@@ -235,7 +235,17 @@ export function createChatGPTBridge({document,getProject,change,flush,openModal,
   error='';render();
  });
  document.addEventListener('input',event=>{
-  if(event.target?.id==='gptRequirement')requirement=event.target.value;
+  if(event.target?.id==='gptRequirement'){
+   requirement=event.target.value;
+   const preview=document.querySelector('#gptPreview'),warning=document.querySelector('#gptWarning');
+   if(preview&&warning){
+    let ok=true,message='';
+    try{const fresh=pack();preview.value=fresh.prompt;if(fresh.totalChars>24000)message='交接文本超过24,000字，建议拆成单集提交。'}
+    catch(e){ok=false;preview.value='';message=e.message}
+    warning.textContent=message;warning.hidden=!message;
+    for(const button of document.querySelectorAll('[data-gpt-act="copy"],[data-gpt-act="handoff"]'))button.disabled=!ok;
+   }
+  }
   if(event.target?.id==='gptChatUrl')chatUrl=event.target.value;
   if(event.target?.id==='gptResult')candidateText=event.target.value;
  });
