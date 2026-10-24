@@ -48,7 +48,7 @@ await click('[data-gpt-act="paste"]');
 assert.equal(pick('#gptResult').value,candidate);
 await click('[data-gpt-act="save-result"]');
 assert.equal(project.script,initial);
-assert.equal(project.chatgptCandidates.at(-1).text,candidate);
+assert.equal(project.chatgptCandidates.at(-1).text,candidate.trim());
 await click('[data-gpt-act="adopt"]');
 assert.equal(project.chatgptHandoffs[0].adoptedCandidateId,project.chatgptCandidates[0].id);
 assert.ok(project.script.includes('这次轮到我们动手'));
