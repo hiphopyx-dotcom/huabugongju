@@ -19,6 +19,10 @@ jobs:
           node --check pages/chatgpt-handoff.mjs
       - name: Run full existing and bridge tests
         run: node --test deploy/tests/*.test.mjs
+      - name: Install isolated browser DOM test runtime
+        run: npm install --prefix /tmp/jbp-chatgpt-dom --no-save --no-audit --no-fund happy-dom@20
+      - name: Test ChatGPT click/copy/paste and explicit adoption
+        run: node deploy/tests/chatgpt-handoff.dom.mjs
       - name: Build preview workbench
         run: |
           cd deploy
