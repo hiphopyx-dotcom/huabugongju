@@ -26,10 +26,10 @@ export function validateChatLink(url){
  if(!value)return 'https://chatgpt.com/';
  try{
   const u=new URL(value);
-  if(u.origin!=='https://chatgpt.com'||u.username||u.password||u.search||u.hash)throw Error('URL必须为ChatGPT聊天链接');
+  if(u.origin!=='https://chatgpt.com'||u.username||u.password||u.search||u.hash)throw Error('请输入语言模型聊天链接');
   if(u.pathname==='/'||/^\/c\/[A-Za-z0-9-]{8,120}\/?$/.test(u.pathname))return u.href;
  }catch{}
- throw Error('只允许 https://chatgpt.com/ 或该账号已打开的 /c/聊天链接，不允许其他地址');
+ throw Error('只允许语言模型官方首页或已有对话链接，不允许外部地址、查询参数或片段');
 }
 function clipSource(text,limit){
  const value=String(text||'');
@@ -126,7 +126,7 @@ export function createChatGPTBridge({document,getProject,change,flush,openModal,
  function summary(){
   const h=active();if(!h)return '';
   return '<div class="notice"><strong>最近交接：</strong>'+esc(h.kindLabel)+' · '+esc(h.sourceLabel)+' · '+new Date(h.created).toLocaleString('zh-CN')+
-    '<div class="row wrap" style="margin-top:10px"><button data-gpt-act="resume">带回ChatGPT结果</button></div></div>';
+    '<div class="row wrap" style="margin-top:10px"><button data-gpt-act="resume">带回语言模型结果</button></div></div>';
  }
  function render(){
   let preview='',warning='';
@@ -137,9 +137,9 @@ export function createChatGPTBridge({document,getProject,change,flush,openModal,
    const h=active();
    if(!h){view='prepare';return render()}
    const latest=h.resultId&&project().chatgptCandidates?.find(r=>r.id===h.resultId);
-   openModal('<h2>ChatGPT 生成结果 · 人工验收</h2><p class="muted">将 ChatGPT 回复的剧本正文粘贴在下方。保存候选稿不修改正式剧本，只有你点击人工采纳才会修改。</p>'+
+   openModal('<h2>语言模型生成结果 · 人工验收</h2><p class="muted">将语言模型回复的剧本正文粘贴在下方。保存候选稿不修改正式剧本，只有你点击人工采纳才会修改。</p>'+
     '<p class="notice">作品：'+esc(project().title)+' · '+esc(h.kindLabel)+' · '+esc(h.sourceLabel)+'</p>'+
-    '<label class="field">候选剧本 / 评审意见<textarea id="gptResult" class="script-text" style="min-height:260px" placeholder="在ChatGPT复制生成结果，返回这里粘贴...">'+esc(candidateText||latest?.text||'')+'</textarea></label>'+
+    '<label class="field">候选剧本 / 评审意见<textarea id="gptResult" class="script-text" style="min-height:260px" placeholder="在语言模型复制生成结果，返回这里粘贴...">'+esc(candidateText||latest?.text||'')+'</textarea></label>'+
     '<div class="row wrap"><button data-gpt-act="paste">从剪贴板粘贴</button><button data-gpt-act="save-result" class="primary">先保存为候选稿</button>'+
     (latest?'<button data-gpt-act="adopt" '+(['next','rewrite'].includes(h.kind)?'':'disabled')+'>核对后人工采纳正文</button>':'')+
     '<button data-gpt-act="back">返回交接设置</button></div>'+
@@ -147,23 +147,23 @@ export function createChatGPTBridge({document,getProject,change,flush,openModal,
     (error?'<p class="notice">'+esc(error)+'</p>':'')+
     '<p class="muted">若工作台剧本在交接后被编辑，禁止采用旧候选覆盖。可复制候选内容另行人工合并。</p>',true);return;
   }
-  openModal('<h2>ChatGPT 个人账号 · 剧本交接</h2>'+
-   '<p>将剧爆棚现有内容整理成专业编剧提示词，复制并打开你已登录的 ChatGPT 聊天页面。<strong>不使用 OpenAI API，不读取账号登录信息，也不会自动发送消息。</strong></p>'+
+  openModal('<h2>语言模型个人账号 · 剧本交接</h2>'+
+   '<p>将剧爆棚现有内容整理成专业编剧提示词，复制并打开你已登录的语言模型聊天页面。<strong>仅打开网页，不读取账号登录信息，也不会自动发送消息。</strong></p>'+
    '<div class="grid2"><label class="field">创作任务<select id="gptKind" data-gpt-change="kind">'+
     Object.entries(FOCUS).map(([v,label])=>'<option value="'+v+'" '+(kind===v?'selected':'')+'>'+esc(label)+'</option>').join('')+
     '</select></label><label class="field">参考范围<select id="gptScope" data-gpt-change="scope"><option value="episode" '+(scope==='episode'?'selected':'')+'>选择单集</option><option value="full" '+(scope==='full'?'selected':'')+'>完整剧本</option></select></label></div>'+
    (scope==='episode'?'<label class="field">目标集<select id="gptPart" data-gpt-change="part">'+
     all.map(p=>'<option value="'+esc(p.key)+'" '+(partKey===p.key?'selected':'')+'>'+esc(p.label)+'</option>').join('')+'</select></label>':'')+
    '<label class="field">额外创作要求<textarea id="gptRequirement" rows="3" placeholder="例如：加强前十集钩子，不改动原卡点。">'+esc(requirement)+'</textarea></label>'+
-   '<label class="field">ChatGPT 目标聊天链接（选填）<input id="gptChatUrl" value="'+esc(chatUrl)+'" placeholder="留空：打开新聊天；也可填 chatgpt.com/c/已有聊天ID"></label>'+
-   '<p class="muted">ChatGPT 网页是否已登录取决于你当前浏览器的会话，剧爆棚不会代你登录。完整剧本较长时建议逐集交接。</p>'+
+   '<label class="field">语言模型目标聊天链接（选填）<input id="gptChatUrl" value="'+esc(chatUrl)+'" placeholder="留空打开新聊天，也可粘贴已有对话链接"></label>'+
+   '<p class="muted">语言模型网页是否已登录取决于你当前浏览器的会话，剧爆棚不会代你登录。完整剧本较长时建议逐集交接。</p>'+
    '<div id="gptWarning" class="notice" '+(warning?'':'hidden')+'>'+esc(warning)+'</div>'+
    '<label class="field">交接内容预览<textarea id="gptPreview" readonly style="min-height:180px">'+esc(preview)+'</textarea></label>'+
    '<div class="row wrap"><button data-gpt-act="copy" '+(!preview?'disabled':'')+'>仅复制交接内容</button>'+
-   '<button data-gpt-act="handoff" class="primary" '+(!preview?'disabled':'')+'>复制并打开 ChatGPT ↗</button>'+
+   '<button data-gpt-act="handoff" class="primary" '+(!preview?'disabled':'')+'>复制并打开语言模型 ↗</button>'+
    (active()?'<button data-gpt-act="resume">带回生成结果</button>':'')+'</div>'+
    (error?'<p class="notice">'+esc(error)+'</p>':'')+
-   '<p class="muted">不会把剧本放进URL，不自动发送、不读取ChatGPT聊天记录；确认回复符合要求后才能人工采纳到工作台。</p>'+summary(),true);
+   '<p class="muted">不会把剧本放进URL，不自动发送、不读取语言模型聊天记录；确认回复符合要求后才能人工采纳到工作台。</p>'+summary(),true);
  }
  async function clipboardWrite(text){
   if(navigator.clipboard?.writeText){try{await navigator.clipboard.writeText(text);return true}catch{}}
@@ -188,10 +188,10 @@ export function createChatGPTBridge({document,getProject,change,flush,openModal,
     live.chatgptHandoffs=[...(live.chatgptHandoffs||[]),entry].slice(-8);
   },false);
   activeId=entry.id;copyOk=await pending;
-  error=copyOk?'':'浏览器阻止自动复制。请点击“仅复制交接内容”，或从预览框手动复制后粘贴到ChatGPT。';
+  error=copyOk?'':'浏览器阻止自动复制。请点击“仅复制交接内容”，或从预览框手动复制后粘贴到语言模型。';
   // Browsers commonly return null for a successfully opened noopener tab.
   // Never infer a popup blocker from that return value. The URL is safe to open manually.
-  toast(copyOk?'已复制剧本交接包。请在ChatGPT粘贴并自行发送；若未跳转，请手动打开ChatGPT。':'已尝试打开ChatGPT，请从预览框手动复制提示词');
+  toast(copyOk?'已复制剧本交接包。请在语言模型粘贴并自行发送；若未跳转，请手动打开语言模型。':'已尝试打开语言模型，请从预览框手动复制提示词');
   render();
  }
  async function saveResult(){
@@ -256,7 +256,7 @@ export function createChatGPTBridge({document,getProject,change,flush,openModal,
   try{
    const action=button.dataset.gptAct;
    stateFromInputs();
-   if(action==='copy'){const ok=await clipboardWrite(pack().prompt);error=ok?'交接内容已复制，可以在ChatGPT聊天框粘贴。':'复制失败，请从预览框手动复制。';render()}
+   if(action==='copy'){const ok=await clipboardWrite(pack().prompt);error=ok?'交接内容已复制，可以在语言模型聊天框粘贴。':'复制失败，请从预览框手动复制。';render()}
    if(action==='handoff')await submit();
    if(action==='resume'){view='result';error='';candidateText='';render()}
    if(action==='back'){view='prepare';error='';render()}

@@ -27,7 +27,7 @@ const click=async sel=>{pick(sel).click();await pause()};
 const choose=async(sel,value)=>{const el=pick(sel);el.value=value;el.dispatchEvent(new dom.Event('change',{bubbles:true}));await pause()};
 const set=async(sel,value)=>{const el=pick(sel);el.value=value;el.dispatchEvent(new dom.Event('input',{bubbles:true}));await pause()};
 bridge.open();
-assert.ok(doc.body.textContent.includes('ChatGPT 个人账号'));
+assert.ok(doc.body.textContent.includes('语言模型个人账号'));
 await choose('#gptKind','rewrite');
 await choose('#gptScope','episode');
 await choose('#gptPart','第2集#1');
