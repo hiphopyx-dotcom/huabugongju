@@ -35,11 +35,11 @@ if(!claimed){await release();return json({job:null})}return json({job:{id:claime
 }
 const job=await one('SELECT * FROM studio_generation_jobs WHERE id=$1 AND grok_account_id=$2',String(body.id||''),account);
 if(!job||job.lease_hash!==hash(String(body.lease||'')))throw new AccountError(409,'任务执行凭据无效');
-if(job.status==='done'||job.status==='failed'){if(job.leased_until<=now)throw new AccountError(409,'任务执行已过期');return json({saved:true,status:job.status})}
+if(job.status==='done'||job.status==='failed'){if(config.quota)await config.quota.reconcile(job.owner,now);if(job.leased_until<=now)throw new AccountError(409,'任务执行已过期');return json({saved:true,status:job.status})}
 if(job.status!=='running'||job.leased_until<=now)throw new AccountError(409,'任务执行已过期');
 let result=null,error=null;if(body.error){if(!Object.hasOwn(ERRORS,body.error))throw new AccountError(400,'错误类型无效');error=ERRORS[body.error]}else{if(typeof body.result!=='string'||!body.result.trim())throw new AccountError(400,'文字结果不能为空');if(Buffer.byteLength(body.result)>65536)throw new AccountError(413,'文字结果上限64KB');result=body.result}
 const saved=await one("UPDATE studio_generation_jobs SET status=$1,result=$2,error=$3,updated=$4 WHERE id=$5 AND grok_account_id=$6 AND status='running' AND lease_hash=$7 AND leased_until>$4 AND "+validity+' RETURNING id',error?'failed':'done',result,error,now,job.id,account,job.lease_hash);
-if(!saved)throw new AccountError(409,'任务已失效');await release();return json({saved:true,status:error?'failed':'done'});
+if(!saved)throw new AccountError(409,'任务已失效');await release();if(config.quota)await config.quota.reconcile(job.owner,now);return json({saved:true,status:error?'failed':'done'});
 }
 const raw=cookie(req),user=raw?await one('SELECT a.* FROM studio_sessions s JOIN studio_accounts a ON a.id=s.user_id WHERE s.token_hash=$1 AND s.expires>$2 AND a.active=true AND s.version=a.session_version',hash(raw),now):null;
 if(!user)throw new AccountError(401,'请先使用手机号登录');
@@ -77,11 +77,12 @@ await cleanup(account);
 const w=await one('SELECT seen FROM studio_generation_workers WHERE grok_account_id=$1 AND active=true',account);if(!w||Number(w.seen)<=now-45000)throw new AccountError(409,'模型服务尚未连接，请联系管理员');
 const pending=await one("SELECT count(*) AS n FROM studio_generation_jobs WHERE owner=$1 AND status IN ('queued','running')",user.id);if(Number(pending.n)>=3)throw new AccountError(429,'你有3个待完成任务，请等待结果');
 const total=await one("SELECT count(*) AS n FROM studio_generation_jobs WHERE grok_account_id=$1 AND status IN ('queued','running')",account);if(Number(total.n)>=50)throw new AccountError(429,'生成账户排队已满，请稍后再试');
-const id=randomUUID();await q("INSERT INTO studio_generation_jobs (id,owner,grok_account_id,session_version,request_key,prompt,status,created,updated) VALUES ($1,$2,$3,$4,$5,$6,'queued',$7,$7) ON CONFLICT(owner,request_key) DO NOTHING",id,user.id,account,user.session_version,body.requestId,body.prompt.trim(),now);
+const id=randomUUID();if(config.quota)await config.quota.submitText({id,user,account,requestId:body.requestId,prompt:body.prompt.trim(),now});else await q("INSERT INTO studio_generation_jobs (id,owner,grok_account_id,session_version,request_key,prompt,status,created,updated) VALUES ($1,$2,$3,$4,$5,$6,'queued',$7,$7) ON CONFLICT(owner,request_key) DO NOTHING",id,user.id,account,user.session_version,body.requestId,body.prompt.trim(),now);
 const job=await one('SELECT * FROM studio_generation_jobs WHERE owner=$1 AND request_key=$2',user.id,body.requestId);return json({job:jobView(job)},201);
 }
 if((action==='job'||action==='jobs')&&req.method==='GET'){
 const accounts=await q("SELECT DISTINCT grok_account_id FROM studio_generation_jobs WHERE owner=$1 AND status IN ('queued','running')",user.id);for(const a of accounts)await cleanup(a.grok_account_id);
+if(config.quota)await config.quota.reconcile(user.id,now);
 if(action==='job'){const j=await one('SELECT * FROM studio_generation_jobs WHERE id=$1 AND owner=$2 AND admin_deleted=false',String(url.searchParams.get('id')||''),user.id);if(!j)throw new AccountError(404,'任务不存在');return json({job:jobView(j)})}
 return json({jobs:(await q('SELECT * FROM studio_generation_jobs WHERE owner=$1 AND admin_deleted=false ORDER BY created DESC,id DESC LIMIT 10',user.id)).map(jobView)});
 }

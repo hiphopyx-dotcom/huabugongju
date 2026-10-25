@@ -27,3 +27,11 @@ CREATE TABLE IF NOT EXISTS studio_asset_records (
  PRIMARY KEY(owner,project_id,asset_id)
 );
 CREATE INDEX IF NOT EXISTS studio_asset_records_owner_created ON studio_asset_records(owner,created DESC);
+
+-- Estimates are site accounting units, never provider billing measurements.
+CREATE TABLE IF NOT EXISTS studio_quota_wallets (owner text PRIMARY KEY REFERENCES studio_accounts(id), allowance bigint CHECK(allowance>=0), updated bigint NOT NULL);
+CREATE TABLE IF NOT EXISTS studio_quota_rates (id integer PRIMARY KEY CHECK(id=1), image bigint NOT NULL CHECK(image BETWEEN 1 AND 10000000), video_second bigint NOT NULL CHECK(video_second BETWEEN 1 AND 10000000), updated bigint NOT NULL);
+INSERT INTO studio_quota_rates VALUES (1,2000,1000,0) ON CONFLICT(id) DO NOTHING;
+CREATE TABLE IF NOT EXISTS studio_quota_entries (owner text NOT NULL REFERENCES studio_accounts(id), request_key text NOT NULL, kind text NOT NULL CHECK(kind IN ('text','image','video')), state text NOT NULL CHECK(state IN ('reserved','charged','released')), reserved bigint NOT NULL CHECK(reserved>0), charged bigint NOT NULL DEFAULT 0 CHECK(charged>=0 AND charged<=reserved), detail text NOT NULL, created bigint NOT NULL, updated bigint NOT NULL, PRIMARY KEY(owner,request_key));
+CREATE INDEX IF NOT EXISTS studio_quota_entries_owner_state ON studio_quota_entries(owner,state);
+CREATE TABLE IF NOT EXISTS studio_quota_audit (id text PRIMARY KEY, actor text NOT NULL REFERENCES studio_accounts(id), owner text, action text NOT NULL, detail text NOT NULL, created bigint NOT NULL);
