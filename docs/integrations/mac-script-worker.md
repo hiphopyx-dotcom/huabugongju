@@ -1,0 +1,15 @@
+# Workbench script worker
+
+The script entry sends an authenticated `channel: script` job to `/api/generation`. The server chooses the dedicated `语言模型写作主机` account, independent of the existing text worker pool and member account assignments. No browser popup, clipboard, provider URL, cookie reading, or private ChatGPT endpoint is involved. Authentication, per-owner visibility, session revocation, idempotency and queue limits use the existing generation service. No database migration is required.
+
+An administrator downloads a restricted configuration using “下载写作工作端配置”. `tools/mac-script-worker/worker.mjs` runs on the owner's Mac with the official bundled Codex CLI, using its existing ChatGPT login. This consumes the account's Codex allowance, not an API key. It creates isolated, ephemeral text sessions; it does not use or write an existing ChatGPT web conversation. References and writing instructions are sent as text. Never represent this as mirroring the user's web chat history.
+
+Run `node worker.mjs /absolute/private/path/connection.json`. Keep the configuration mode 0600 and its directory mode 0700. It only allows polling the production origin with a per-account credential; the server stores the hash. Rotate/revoke it from the administrator screen. Keep it out of source control and logs. The worker polls outbound HTTPS, needs no listening port, and runs one job at a time. It does not change the existing Grok workers or their login state.
+
+Execution uses stdin, `shell: false`, a private empty temporary working directory, a restricted environment, read-only sandbox, disabled shell/apps/browser/hooks/memory/agents/image tools, an official-provider and ChatGPT-login requirement, and a nine-minute deadline within a ten-minute lease. Only the final text event is returned; failed, empty and oversized results return bounded error categories. Completion retries never repeat generation. A PID lock prevents duplicate workers. A crash leaves the lock for the operator to inspect and remove only after verifying the old process has stopped.
+
+The writing dialog persists each request's project, owner and original script before sending. Replies are saved as local project candidates and shown automatically while the dialog is open; reopening queries unfinished jobs. Candidate adoption is explicit and rejects changed scripts, wrong projects, wrong users, duplicate episodes and incompatible results. The original script remains untouched until acceptance. A submission with uncertain network outcome retains its idempotency key for explicit retry.
+
+Verification: backend integration tests, real DOM workflow, argument/environment/timeout tests, production build, plus an actual production submission through the Mac worker before declaring connected. Preview deployment does not connect to the production worker. Do not claim a real round trip based only on mocked tests.
+
+Official references: [non-interactive execution](https://learn.chatgpt.com/docs/non-interactive-mode), [authentication](https://learn.chatgpt.com/docs/auth), [configuration](https://learn.chatgpt.com/docs/config-file/config-reference).

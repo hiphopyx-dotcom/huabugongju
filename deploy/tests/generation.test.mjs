@@ -4,6 +4,23 @@ import {DatabaseSync} from 'node:sqlite';
 import fs from 'node:fs';
 import {createAccountHandler} from '../lib/accounts.mjs';
 import {createGenerationHandler} from '../lib/generation.mjs';
+test('写作专用通道由服务器路由，成员不能改执行账户且回复只对本人可见',async()=>{
+ const s=setup(),c=await seed(s),old=await worker(s,c);
+ assert.equal((await s.request('script-worker-config',{},c.members[0].cookie)).status,403);
+ const r=await s.request('script-worker-config',{},c.admin);assert.equal(r.status,201);const config=(await r.json()).config,auth='Bearer '+config.workerToken;
+ assert.equal(config.format,'jbp-mac-script-worker-v1');await s.request('heartbeat',{},auth);await s.request('heartbeat',{},old.auth);
+ assert.deepEqual(await (await s.request('status&channel=script',null,c.members[0].cookie)).json(),{online:true});
+ assert.equal((await s.request('submit',{channel:'script',grokAccountId:c.grok.id,prompt:'写剧本',requestId:'wrong'},c.members[0].cookie)).status,400);
+ const response=await s.request('submit',{channel:'script',prompt:'写一集剧本',requestId:'script-1'},c.members[0].cookie);assert.equal(response.status,201);
+ const job=(await response.json()).job;assert.equal(job.requestId,'script-1');assert.equal(s.db.prepare('SELECT grok_account_id FROM studio_generation_jobs WHERE id=?').get(job.id).grok_account_id,config.accountId);
+ assert.equal((await (await s.request('poll',{},old.auth)).json()).job,null);
+ const claim=(await (await s.request('poll',{},auth)).json()).job;assert.equal(claim.id,job.id);
+ s.advance(130000);assert.equal((await s.request('complete',{id:job.id,lease:claim.lease,result:'第2集，收到本次写作结果。'},auth)).status,200);
+ assert.equal((await s.request('job&id='+job.id,null,c.members[1].cookie)).status,404);
+ const saved=(await (await s.request('job&id='+job.id,null,c.members[0].cookie)).json()).job;assert.equal(saved.status,'done');assert.doesNotMatch(JSON.stringify(saved),/workerToken|grok_account_id|lease|写作主机/);
+ await s.request('heartbeat',{},auth);const queued=(await (await s.request('submit',{channel:'script',prompt:'旧会话任务',requestId:'script-2'},c.members[0].cookie)).json()).job;
+ await s.account('assign-grok',{id:c.members[0].id,grokAccountId:c.accounts[1].id},c.admin,'PUT');assert.equal((await (await s.request('poll',{},auth)).json()).job,null);assert.equal(s.db.prepare('SELECT status FROM studio_generation_jobs WHERE id=?').get(queued.id).status,'failed');s.db.close();
+});
 function setup(){const db=new DatabaseSync(':memory:');db.exec(fs.readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));let time=Date.now()-1000;const query=async(sql,p)=>db.prepare(sql).all(Object.fromEntries(p.map((v,i)=>['$'+(i+1),typeof v==='boolean'?Number(v):v])));const accounts=createAccountHandler(query,{setupToken:'setup-test'}),handle=createGenerationHandler(query,{now:()=>time});const call=(fn,action,body,auth='',method=body?'POST':'GET')=>fn(new Request('https://studio.test/api/generation?action='+action,{method,headers:{'Content-Type':'application/json',...(auth.startsWith('Bearer ')?{Authorization:auth}:{Origin:'https://studio.test',Cookie:auth})},body:body?JSON.stringify(body):undefined}));return {db,account:(...a)=>call(accounts,...a),request:(...a)=>call(handle,...a),advance:n=>time+=n}}
 async function seed(s){let r=await s.account('bootstrap',{setupToken:'setup-test',phone:'13800000000',name:'管理员',password:'12345678'});const admin=r.headers.get('set-cookie').split(';')[0];await s.account('grok-accounts',{labels:['主账户','备用账户']},admin);const all=await (await s.account('users',null,admin)).json(),grok=all.grokAccounts[0];const members=[];for(let i=0;i<2;i++){await s.account('users',{phone:'1390000000'+i,name:'成员'+i,password:'123456',grokAccountId:grok.id},admin);r=await s.account('login',{phone:'1390000000'+i,password:'123456'});members.push({cookie:r.headers.get('set-cookie').split(';')[0],id:(await r.json()).user.id})}return {admin,grok,members,accounts:all.grokAccounts}}
 async function worker(s,c){const r=await s.request('worker-config',{grokAccountId:c.grok.id},c.admin);assert.equal(r.status,201);const config=(await r.json()).config;return {config,auth:'Bearer '+config.workerToken}}
