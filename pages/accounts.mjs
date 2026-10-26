@@ -1,5 +1,5 @@
-import {openQuota,resetQuota} from './quota.mjs?v=9dce9fdded42';
-import {memberError} from './model-privacy.mjs?v=9dce9fdded42';
+import {openQuota,resetQuota} from './quota.mjs?v=8fd782c88145';
+import {memberError} from './model-privacy.mjs?v=8fd782c88145';
 let assetViewer=null,writingLauncher=null;
 export function setWritingLauncher(fn){writingLauncher=fn;}
 export function setAssetViewer(fn){assetViewer=fn;}
