@@ -1,4 +1,4 @@
-import {buildHandoff,splitEpisodes,adoptChatResult} from './chatgpt-handoff.mjs?v=59067115e6d0';
+import {buildHandoff,splitEpisodes,adoptChatResult} from './chatgpt-handoff.mjs?v=f45c282e25ce';
 const E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function assertWritingOwner(record,project,user){
  if(!user||record.ownerId!==user.id||record.projectId!==project.id)throw Error('项目或账号已切换，请回到提交任务的项目查看结果');
