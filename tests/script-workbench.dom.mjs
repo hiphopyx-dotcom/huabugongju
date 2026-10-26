@@ -13,7 +13,7 @@ function fixture() {
   const window = new Window({url: 'https://jubaopeng-canvas.vercel.app/studio/index.html', settings: {disableIframePageLoading: true, disableJavaScriptFileLoading: true}});
   const document = window.document;
   document.body.innerHTML = '<main id="host"></main><div id="modal"><div id="modalBody"></div></div>';
-  const state = {project: project(), user: {id: 'user-a'}, saves: 0, changes: 0, flushes: 0, imports: [], toasts: [], mounts: [], locals: 0, ai: 0, destinations: []};
+  const state = {project: project(), user: {id: 'user-a'}, saves: 0, changes: 0, flushes: 0, imports: [], toasts: [], mounts: [], locals: 0, ai: 0, destinations: [], downloads: []};
   const host = document.querySelector('#host');
   const writer = {unmount() {}, async mount(node, options = {}) {state.mounts.push(options); node.innerHTML = '<div data-writer-ready>候选稿区域</div>';}};
   const api = createScriptWorkbench({document, window, getProject: () => state.project, getUser: () => state.user,
@@ -24,7 +24,7 @@ function fixture() {
     closeModal: () => {document.querySelector('#modal').style.display = 'none'; document.querySelector('#modalBody').innerHTML = '';},
     importProject: async (data, expected) => {state.imports.push({data, expected});},
     breakdown: {local: () => {state.locals++;}, aiSetup: () => {state.ai++;}},
-    goto: value => state.destinations.push(value), download: () => {},
+    goto: value => state.destinations.push(value), download: kind => {state.downloads.push({kind, projectId: state.project.id, userId: state.user?.id, script: state.project.script});},
   });
   api.render(host);
   const click = async selector => {const el = document.querySelector(selector); assert.ok(el, selector); el.click(); await tick(); return el;};
@@ -75,6 +75,40 @@ test('episode and review buttons locate the corresponding manuscript text', asyn
   await f.click('[data-work="line"][data-line="4"]');
   editor = f.document.querySelector('[data-work-script]');
   assert.equal(editor.value.slice(editor.selectionStart, editor.selectionEnd), '陈默：');
+});
+
+test('the manuscript DOCX button exports the latest typed text and displays its fixed format', async t => {
+  const f = fixture(); t.after(() => f.window.happyDOM.abort());
+  await f.click('[data-work="step"][data-step="manuscript"]');
+  assert.equal(f.document.querySelector('[data-work="export"]').textContent, '导出 DOCX');
+  assert.match(f.host.textContent, /Word 导出固定为宋体、小四、1\.5 倍行距/);
+  f.input('[data-work-script]', '第1集\n1-1 日 内 门房\n△手改尚未定稿。');
+  const latest = '第1集\n1-1 日 内 门房\n△手改后的最新正文。\n陈默：这一版才导出。\n\n';
+  f.input('[data-work-script]', latest);
+  await f.click('[data-work="export"]');
+  assert.deepEqual(f.state.downloads, [{kind: 'script', projectId: 'project-a', userId: 'user-a', script: latest}]);
+  assert.equal(f.state.project.script, latest);
+  assert.equal(f.document.querySelector('[data-work-script]').value, latest);
+  assert.equal(f.state.imports.length, 0);
+});
+
+test('a stale manuscript page cannot export after a project or account switch', async t => {
+  for (const scope of ['project', 'account']) await t.test(scope, async t => {
+    const f = fixture(); t.after(() => f.window.happyDOM.abort());
+    await f.click('[data-work="step"][data-step="manuscript"]');
+    f.input('[data-work-script]', '第1集\n△旧页面的正文。');
+    if (scope === 'project') f.state.project = {...project('project-b'), script: '第1集\n△新作品的正文。'};
+    else f.state.user = {id: 'user-b'};
+    const current = f.state.project.script;
+    await f.click('[data-work="export"]');
+    assert.deepEqual(f.state.downloads, []);
+    assert.equal(f.state.project.script, current);
+    assert.ok(f.state.toasts.some(message => /项目或账号已切换/.test(message)));
+    f.api.render(f.host);
+    await f.click('[data-work="step"][data-step="manuscript"]');
+    await f.click('[data-work="export"]');
+    assert.deepEqual(f.state.downloads, [{kind: 'script', projectId: f.state.project.id, userId: f.state.user.id, script: current}]);
+  });
 });
 
 test('bridge requires launcher origin, exact iframe source and nonce, and previews before confirmation', async t => {
