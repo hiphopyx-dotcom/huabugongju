@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {assertWritingOwner} from '../../pages/language-writing.mjs';
-import {adoptChatResult} from '../../pages/chatgpt-handoff.mjs';
+import {assertWritingOwner} from '../../public/studio/language-writing.mjs';
+import {adoptChatResult} from '../../public/studio/chatgpt-handoff.mjs';
 test('写作候选不能跨账号、跨项目或覆盖已经编辑的原稿',()=>{
  const record={ownerId:'a',projectId:'80',kind:'next',scriptSnapshot:'第1集\n△人物走进房间，桌上放着一封信。\n'};
  assert.doesNotThrow(()=>assertWritingOwner(record,{id:'80'},{id:'a'}));
