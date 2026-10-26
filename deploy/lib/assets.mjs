@@ -10,7 +10,7 @@ export function createAssetHandler(query){return async req=>{try{
  const q=(sql,...params)=>query(sql,params),one=async(sql,...params)=>(await q(sql,...params))[0];
  const raw=cookie(req),user=raw?await one('SELECT a.* FROM studio_sessions s JOIN studio_accounts a ON a.id=s.user_id WHERE s.token_hash=$1 AND s.expires>$2 AND a.active=true AND s.version=a.session_version',hash(raw),now):null;
  if(!user)throw new AccountError(401,'请先使用手机号登录');
- const controls=project=>q('SELECT asset_id AS id,name,prompt,admin_locked,admin_deleted,admin_revision FROM studio_asset_records WHERE owner=$1 AND project_id=$2 AND admin_revision>0',user.id,project);
+ const controls=project=>q('SELECT asset_id AS id,name,prompt,admin_locked,admin_deleted,admin_revision FROM studio_asset_records WHERE owner=$1 AND (project_id=$2 OR EXISTS (SELECT 1 FROM studio_images i WHERE i.owner=studio_asset_records.owner AND i.id=studio_asset_records.asset_id AND i.project_id=studio_asset_records.project_id)) AND admin_revision>0',user.id,project);
  if(action==='controls'){if(req.method!=='GET')throw new AccountError(405,'请使用 GET');return json({controls:await controls(identifier(url.searchParams.get('projectId')))})}
  if(action==='sync'){
   if(req.method!=='POST')throw new AccountError(405,'请使用 POST');const rawBody=await req.text();if(Buffer.byteLength(rawBody)>1000000)throw new AccountError(413,'同步内容过大');let b;try{b=JSON.parse(rawBody)}catch{throw new AccountError(400,'请求格式错误')}
@@ -24,7 +24,7 @@ export function createAssetHandler(query){return async req=>{try{
   });
   if(new Set(rows.map(r=>r[2])).size!==rows.length)throw new AccountError(400,'同批次资产标识重复');
   if(rows.length){const params=rows.flat(),values=rows.map((row,i)=>'('+row.map((_,j)=>'$'+(i*12+j+1)).join(',')+')').join(',');
-   await query('INSERT INTO studio_asset_records (owner,project_id,asset_id,project_title,name,kind,provenance,prompt,preview,media_url,created,synced) VALUES '+values+' ON CONFLICT(owner,project_id,asset_id) DO UPDATE SET project_title=excluded.project_title,name=excluded.name,provenance=excluded.provenance,prompt=excluded.prompt,preview=excluded.preview,media_url=excluded.media_url,synced=excluded.synced WHERE studio_asset_records.admin_locked=false AND studio_asset_records.admin_deleted=false',params);
+   await query('INSERT INTO studio_asset_records (owner,project_id,asset_id,project_title,name,kind,provenance,prompt,preview,media_url,created,synced) VALUES '+values+' ON CONFLICT(owner,project_id,asset_id) DO UPDATE SET project_title=excluded.project_title,name=excluded.name,provenance=excluded.provenance,prompt=excluded.prompt,preview=excluded.preview,media_url=excluded.media_url,synced=excluded.synced WHERE studio_asset_records.admin_locked=false AND studio_asset_records.admin_deleted=false AND NOT EXISTS (SELECT 1 FROM studio_images i WHERE i.owner=studio_asset_records.owner AND i.project_id=studio_asset_records.project_id AND i.id=studio_asset_records.asset_id)',params);
   }
   return json({synced:rows.length,controls:await controls(projectId)});
  }
