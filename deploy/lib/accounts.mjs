@@ -1,7 +1,7 @@
 import {providerUrl} from '../../public/studio/model-privacy.mjs';
 import {AccountError,phone,name,memberPassword,hashPassword,verifyPassword,requireAdmin,hash,token,cookie,safeOrigin,moduleUrl} from './security.mjs';
 import {randomUUID,timingSafeEqual} from 'node:crypto';
-import {SSO_ORIGINS,launchPage} from './sso.mjs';
+import {SSO_ORIGINS,launchPage,PROJECT_IMPORT_ORIGIN,PROJECT_IMPORT_PATH,validImportNonce} from './sso.mjs';
 const json=(data,status=200,extra={})=>Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...extra}});
 const cleanUser=u=>({id:u.id,name:u.name,phone:u.phone,role:u.role,...(u.role==='admin'?{grokAccount:u.grok_label||null}:{}),generationAssigned:!!u.grok_label});
 async function read(req){const text=await req.text();if(text.length>16384)throw new AccountError(413,'请求过大');try{return JSON.parse(text)}catch{throw new AccountError(400,'请求格式错误')}}
@@ -29,13 +29,16 @@ if(op==='logout'&&req.method==='POST'){if(raw)await q('DELETE FROM studio_sessio
 if((op==='modules'||op==='module-open')&&req.method==='GET'){
 if(op==='modules')requireAdmin(u);
 if(raw&&!u)throw new AccountError(401,'登录已失效，请返回工作台重新登录');
+const params=new URL(req.url).searchParams,id=params.get('module'),importRequested=op==='module-open'&&(params.has('intent')||params.has('nonce')),importNonce=params.get('nonce');
+if(importRequested){if(!u)throw new AccountError(401,'请先登录工作台');if(params.getAll('intent').length!==1||params.get('intent')!=='project-import'||params.getAll('nonce').length!==1||!validImportNonce(importNonce)||params.getAll('module').length!==1||id!=='script')throw new AccountError(400,'作品导入入口无效')}
 const modules=await q('SELECT id,name,url FROM studio_model_modules ORDER BY id');
 let bindings=[];if(u?.grok_label)bindings=await q('SELECT module_id,url FROM studio_grok_modules WHERE grok_account_id=$1',u.grok_account_id);
 const effective=modules.map(m=>{const b=bindings.find(b=>b.module_id===m.id);const assigned=u?.role==='user'&&['image','storyboard'].includes(m.id);return {...m,url:b?.url||(assigned?'':m.url),source:b?.url?'assigned':assigned?'unconfigured':'shared'}});
 if(op==='modules')return json({modules:effective});
-const id=new URL(req.url).searchParams.get('module');const m=effective.find(m=>m.id===id);if(!m)throw new AccountError(400,'模型类型无效');if(!m.url)throw new AccountError(409,'请让管理员配置已分配账户的模型页面地址');
-if(u?.role!=='admin'&&providerUrl(m.url))throw new AccountError(409,'站内模型服务待接入，请联系管理员');
+const m=effective.find(m=>m.id===id);if(!m)throw new AccountError(400,'模型类型无效');if(!m.url)throw new AccountError(importRequested?400:409,importRequested?'作品导入入口无效':'请让管理员配置已分配账户的模型页面地址');
 const origin=new URL(moduleUrl(m.url)).origin;
+if(importRequested){if(origin!==PROJECT_IMPORT_ORIGIN)throw new AccountError(400,'作品导入入口无效');const target=new URL(PROJECT_IMPORT_PATH,PROJECT_IMPORT_ORIGIN);target.searchParams.set('nonce',importNonce);return launchPage(id,target.href,origin,{projectImportNonce:importNonce})}
+if(u?.role!=='admin'&&providerUrl(m.url))throw new AccountError(409,'站内模型服务待接入，请联系管理员');
 if(u&&SSO_ORIGINS.has(origin)){
 try{const r=await (config.fetch||fetch)(origin+'/api/studio-sso?action=capabilities',{signal:AbortSignal.timeout(2000),redirect:'error'});const capability=r.ok?await r.json():null;if(capability?.protocol==='jbp-sso-pkce-v1')return launchPage(id,m.url,origin)}catch{/* Original model remains usable until its SSO adapter is published. */}
 }

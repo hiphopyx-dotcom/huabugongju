@@ -3,6 +3,9 @@ import {AccountError,hash,token,cookie,safeOrigin,moduleUrl} from './security.mj
 
 // Only applications owned by this studio can receive workbench identities.
 export const SSO_ORIGINS=new Set(['https://sunny-terra-drift-arch.grok.me','https://jubaopeng-v2.vercel.app','https://jubaopeng-white.vercel.app']);
+export const PROJECT_IMPORT_ORIGIN='https://jubaopeng-v2.vercel.app';
+export const PROJECT_IMPORT_PATH='/studio/workbench-bridge';
+export const validImportNonce=v=>typeof v==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
 export const challengeFor=v=>createHash('sha256').update(v).digest('base64url');
 const valid=v=>typeof v==='string'&&/^[A-Za-z0-9_-]{43}$/.test(v);
 const json=(data,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});
@@ -47,11 +50,12 @@ export function createSsoHandler(query){return async req=>{try{
  throw new AccountError(404,'接口不存在');
  }catch(e){return json({error:e.status?e.message:'统一登录服务暂不可用'},e.status||503)}}}
 
-export function launchPage(module,target,origin){
- const nonce=token();const args=JSON.stringify({module,target,origin}).replace(/</g,'\\u003c');
+export function launchPage(module,target,origin,{projectImportNonce}={}){
+ if(projectImportNonce!==undefined){const url=new URL(target);if(module!=='script'||origin!==PROJECT_IMPORT_ORIGIN||url.origin!==PROJECT_IMPORT_ORIGIN||url.pathname!==PROJECT_IMPORT_PATH||url.searchParams.get('nonce')!==projectImportNonce||!validImportNonce(projectImportNonce))throw new AccountError(400,'作品导入入口无效')}
+ const nonce=token();const args=JSON.stringify({module,target,origin,...(projectImportNonce?{projectImportNonce}:{})}).replace(/</g,'\\u003c');
  return new Response(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>剧爆棚 · 模型</title><style>html,body,iframe{margin:0;width:100%;height:100%;border:0}body{background:#111;color:#ddd;font-family:sans-serif}#error{padding:20px}</style></head><body><p id="error" hidden></p><iframe title="剧爆棚原模型" referrerpolicy="no-referrer" allow="clipboard-write" sandbox="allow-scripts allow-forms allow-same-origin allow-downloads allow-popups allow-popups-to-escape-sandbox"></iframe><script nonce="${nonce}">
 const d=${args},frame=document.querySelector('iframe');let issued=false;
-window.addEventListener('message',async e=>{if(e.source!==frame.contentWindow||e.origin!==d.origin||e.data?.type!=='jbp-sso-ready'||issued)return;if(!/^[A-Za-z0-9_-]{43}$/.test(e.data.challenge))return;issued=true;try{const r=await fetch('/api/sso?action=ticket',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({module:d.module,challenge:e.data.challenge})});const b=await r.json();if(!r.ok)throw Error(b.error);frame.contentWindow.postMessage({type:'jbp-sso-ticket',code:b.code},d.origin)}catch(err){const p=document.querySelector('#error');p.hidden=false;p.textContent=err.message;frame.hidden=true}});
-frame.src=new URL('/api/studio-sso',d.target).href+'?next='+encodeURIComponent(new URL(d.target).pathname);
+window.addEventListener('message',async e=>{if(e.source!==frame.contentWindow||e.origin!==d.origin)return;if(d.projectImportNonce&&e.data?.nonce===d.projectImportNonce){if(e.data.type==='jbp-project-bridge-ready'){frame.contentWindow.postMessage({type:'jbp-project-bridge-init',nonce:d.projectImportNonce},d.origin);return}if(e.data.type==='jbp-project-import'&&e.data.bundle&&typeof e.data.bundle==='object'&&!Array.isArray(e.data.bundle)){if(window.parent!==window)window.parent.postMessage({type:'jbp-project-import',nonce:d.projectImportNonce,bundle:e.data.bundle},window.location.origin);return}}if(e.data?.type!=='jbp-sso-ready'||issued)return;if(!/^[A-Za-z0-9_-]{43}$/.test(e.data.challenge))return;issued=true;try{const r=await fetch('/api/sso?action=ticket',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({module:d.module,challenge:e.data.challenge})});const b=await r.json();if(!r.ok)throw Error(b.error);frame.contentWindow.postMessage({type:'jbp-sso-ticket',code:b.code},d.origin)}catch(err){const p=document.querySelector('#error');p.hidden=false;p.textContent=err.message;frame.hidden=true}});
+const target=new URL(d.target);frame.src=new URL('/api/studio-sso',d.target).href+'?next='+encodeURIComponent(target.pathname+target.search);
 </script></body></html>`,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer','Content-Security-Policy':`default-src 'none'; frame-src ${origin}; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'self'`}});
 }
