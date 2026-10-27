@@ -129,6 +129,20 @@ test('real entity relations disambiguate reverse/detail and foreign project/epis
   assert.equal(imageWorkshopKind('plan').kind, '场景');
 });
 
+test('legacy asset scope follows its matched entity relation and falls back to the image only when absent', () => {
+  for(const [entityScope,imageScope,expected] of [
+    ['series',undefined,'series'],['series','episode','series'],
+    ['episode','series','episode'],[undefined,'series','series'],[undefined,undefined,'episode'],
+  ]){
+    const raw=backup(),entity=raw.data.jingben_characters[0],row=raw.data.jingben_images[0];
+    if(entityScope===undefined)delete entity.scope;else entity.scope=entityScope;
+    if(imageScope===undefined)delete row.scope;else row.scope=imageScope;
+    const preview=inspectImageWorkshopImport(raw),candidate=preview.candidates.find(c=>c.sourceId==='image-workshop:im-front');
+    assert.equal(candidate.scope,expected,JSON.stringify({entityScope,imageScope}));
+    const picked=select(preview,[candidate.sourceId]).assets[0];assert.equal(picked.scope,expected);
+  }
+});
+
 test('keeps missing/local/unreadable image failures explicit and does not manufacture sizes or placeholders', () => {
   for (const [src, reason] of [[null,/没有/],['file:gone',/未能展开/],['data:image/png;base64,SGVsbG8=',/格式或尺寸/],['data:image/svg+xml;base64,PHN2Zy8+',/仅支持/],['not a url',/链接无效/]]) {
     const raw = backup(); raw.data.jingben_images = [{...raw.data.jingben_images[0],image_url:src}];

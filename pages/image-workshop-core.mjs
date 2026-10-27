@@ -232,7 +232,7 @@ export function inspectImageWorkshopImport(raw, options = {}) {
         episodeTitle: episode ? text(episode.title, '原分集名称', 500) : '',
         ...(episode && Number.isSafeInteger(episode.ep_no) && episode.ep_no > 0 ? {episodeNumber: episode.ep_no} : {}),
       },
-      scope: row.scope === 'series' ? 'series' : 'episode',
+      scope: ['series','episode'].includes(relation?.row.scope) ? relation.row.scope : row.scope === 'series' ? 'series' : 'episode',
     };
     candidates.push(candidate);
   }
