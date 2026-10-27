@@ -103,6 +103,27 @@ test('derive reads explicit storyboard entities and saving a stale version keeps
   assert.equal(f.state.calls.length,count,'reload must not discard a dirty draft');
 });
 
+test('adding an entity while a prior save is pending keeps it dirty until the next save',async t=>{
+  const gate=deferred();let pendingSave;
+  const f=fixture(t,{configure:s=>{s.requestImpl=c=>{
+    if(c.action==='workspace'&&c.body&&!pendingSave){pendingSave=c;return gate.promise;}
+  };}});
+  await f.tab('characters');f.input('[data-flow-detail="description"]','已提交的人物设定');
+  await f.click('[data-flow-action="save"]');
+  assert.equal(pendingSave.body.workspace.entities.length,1);
+  await f.click('[data-flow-action="add"][data-category="characters"]');
+  const added=f.api.getWorkspace().entities.at(-1);assert.equal(added.name,'新角色');
+  f.state.workspace=clone(pendingSave.body.workspace);f.state.version+=1;
+  gate.resolve({workspace:clone(f.state.workspace),version:f.state.version});await tick();
+  assert.match(f.host.querySelector('.image-production .badge').textContent,/未保存修改/);
+  assert.equal(f.state.workspace.entities.some(e=>e.id===added.id),false,'the first request did not contain the new entity');
+  await f.click('[data-flow-action="save"]');
+  assert.equal(f.state.workspace.entities.some(e=>e.id===added.id),true);
+  assert.match(f.host.querySelector('.image-production .badge').textContent,/设定已同步/);
+  await f.click('[data-flow-action="reload"]');
+  assert.equal(f.api.getWorkspace().entities.some(e=>e.id===added.id),true,'the new entity survives a server reload');
+});
+
 test('character front and expression preparation retain descriptions, fixed ratios and canonical identity refs',async t=>{
   const f=fixture(t,{configure:s=>{s.items=[image('old-front'),image('canonical-front','char-a','front',{created:1793000010000})];}});
   await f.tab('characters');await f.click('[data-flow-action="prepare"][data-slot="front"]');
@@ -207,6 +228,27 @@ test('history has server pagination scoped to project/entity/slot, and the perso
   assert.equal(f.host.querySelectorAll('.image-history-panel .image-gallery-card').length,24);await f.click('[data-flow-action="history-next"]');
   call=f.state.calls.filter(c=>c.action==='list').at(-1);assert.equal(call.params.page,'2');assert.equal(f.host.querySelectorAll('.image-history-panel .image-gallery-card').length,3);
   assert.doesNotMatch(f.host.querySelector('.image-history-panel').textContent,/other-project/);
+});
+
+test('a late history response cannot replace another entity history or show its stale error',async t=>{
+  for(const result of ['success','error'])await t.test(result,async t=>{
+    const gate=deferred();
+    const f=fixture(t,{configure:s=>{
+      s.workspace.entities.push(entity('char-b','characters','阿宁'));
+      s.items=[image('old-a'),image('current-b','char-b')];
+      s.requestImpl=c=>c.action==='list'&&c.params.entityId==='char-a'?gate.promise:undefined;
+    }});
+    await f.tab('characters');await f.click('[data-flow-action="history"][data-id="char-a"][data-slot="front"]');
+    await f.click('[data-flow-action="entity"][data-id="char-b"]');
+    await f.click('[data-flow-action="history"][data-id="char-b"][data-slot="front"]');
+    assert.match(f.host.querySelector('.image-history-panel').textContent,/current-b/);
+    if(result==='success')gate.resolve({items:[image('old-a')],total:1});
+    else gate.reject(Error('旧人物历史读取失败'));
+    await tick();
+    assert.match(f.host.querySelector('.image-history-panel').textContent,/current-b/);
+    assert.doesNotMatch(f.host.querySelector('.image-history-panel').textContent,/old-a/);
+    assert.doesNotMatch(f.host.textContent,/旧人物历史读取失败/);
+  });
 });
 
 test('deletion requires a second confirmation, and an old account confirmation cannot delete under a new owner',async t=>{
