@@ -4,11 +4,13 @@ import {failure, limitedBytes} from './relay.mjs';
 export const WORKER_ORIGIN = 'https://jubaopeng-canvas.vercel.app';
 export const BODY_LIMITS = Object.freeze({image: 4 * 1024 * 1024 + 65536, other: 2_300_000});
 
-export async function createBackend({query, publicOrigin, libraryRoot = new URL('../lib/', import.meta.url), env = process.env}) {
+export async function createBackend({query, publicOrigin, libraryRoot = new URL('../lib/', import.meta.url), env = process.env, onImageConfiguration = () => {}}) {
   if (new URL(publicOrigin).origin !== publicOrigin || !publicOrigin.startsWith('https://')) throw Error('Exact HTTPS origin required');
   const [accounts, generation, assets, collaboration, sso, reference, images, quota] = await Promise.all(
     ['accounts', 'generation', 'assets', 'collaboration', 'sso', 'reference', 'images', 'quota'].map(name => import(new URL(name + '.mjs', libraryRoot)))
   );
+  const imageConfiguration = images.imageServerConfig(env);
+  onImageConfiguration(imageConfiguration);
   const routes = new Map([
     ['/api/accounts', [new Set(['GET', 'POST', 'PUT']), accounts.createAccountHandler(query, {setupToken: env.STUDIO_SETUP_TOKEN})]],
     ['/api/generation', [new Set(['GET', 'POST']), generation.createGenerationHandler(query, {quota: quota.createQuotaService(query)})]],
@@ -16,7 +18,7 @@ export async function createBackend({query, publicOrigin, libraryRoot = new URL(
     ['/api/collaboration', [new Set(['GET', 'POST', 'PUT', 'DELETE']), collaboration.createCollaborationHandler(query)]],
     ['/api/sso', [new Set(['POST']), sso.createSsoHandler(query)]],
     ['/api/reference', [new Set(['GET']), reference.reference]],
-    ['/api/images', [new Set(['GET', 'POST']), images.createImageHandler(query, images.imageServerConfig(env))]],
+    ['/api/images', [new Set(['GET', 'POST']), images.createImageHandler(query, imageConfiguration)]],
     ['/api/quota', [new Set(['GET', 'POST']), quota.createQuotaHandler(query)]],
   ]);
   return async request => {
