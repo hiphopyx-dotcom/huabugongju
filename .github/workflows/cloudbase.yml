@@ -6,6 +6,8 @@ on:
       - 'public/studio/**'
       - 'pages/**'
       - 'scripts/export-github-pages.mjs'
+      - 'tests/project-selection.test.mjs'
+      - 'tests/ui.test.mjs'
       - '.github/workflows/cloudbase.yml'
   push:
     branches: [main]
@@ -14,6 +16,8 @@ on:
       - 'public/studio/**'
       - 'pages/**'
       - 'scripts/export-github-pages.mjs'
+      - 'tests/project-selection.test.mjs'
+      - 'tests/ui.test.mjs'
       - '.github/workflows/cloudbase.yml'
 permissions:
   contents: read
@@ -29,6 +33,7 @@ jobs:
           cache-dependency-path: deploy/package-lock.json
       - run: npm ci --ignore-scripts --prefix deploy
       - run: node --test deploy/cloudbase/tests/*.test.mjs
+      - run: node --test tests/project-selection.test.mjs tests/ui.test.mjs
       - run: node scripts/export-github-pages.mjs
       - run: node deploy/cloudbase/build.mjs "$RUNNER_TEMP/jbp-cloudbase-release"
         env:

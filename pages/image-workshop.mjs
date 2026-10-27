@@ -1,8 +1,8 @@
-import {IMAGE_WORKSHOP_CATEGORIES,readImageWorkshopArchive,selectImageWorkshopImport,buildImageWorkshopPrompt} from './image-workshop-core.mjs?v=86fa1afc3511';
-import {memberError} from './model-privacy.mjs?v=86fa1afc3511';
-import {resetQuota} from './quota.mjs?v=86fa1afc3511';
-import {createImageWorkbench} from './image-workbench.mjs?v=86fa1afc3511';
-import * as SB from './storyboard.mjs?v=86fa1afc3511';
+import {IMAGE_WORKSHOP_CATEGORIES,readImageWorkshopArchive,selectImageWorkshopImport,buildImageWorkshopPrompt} from './image-workshop-core.mjs?v=116d0d9f6244';
+import {memberError} from './model-privacy.mjs?v=116d0d9f6244';
+import {resetQuota} from './quota.mjs?v=116d0d9f6244';
+import {createImageWorkbench} from './image-workbench.mjs?v=116d0d9f6244';
+import * as SB from './storyboard.mjs?v=116d0d9f6244';
 
 const E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const N=v=>v==null?'不限额':Number(v).toLocaleString('zh-CN');
