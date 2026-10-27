@@ -1,24 +1,24 @@
-import {submitMedia,refreshMeters} from './quota.mjs?v=3686c5d51d02';
-import {publicData,memberError} from './model-privacy.mjs?v=3686c5d51d02';
-import * as C from './core.mjs?v=3686c5d51d02';import * as DB from './db.mjs?v=3686c5d51d02';
-import * as Cloud from './cloud.mjs?v=3686c5d51d02';
+import {submitMedia,refreshMeters} from './quota.mjs?v=86fa1afc3511';
+import {publicData,memberError} from './model-privacy.mjs?v=86fa1afc3511';
+import * as C from './core.mjs?v=86fa1afc3511';import * as DB from './db.mjs?v=86fa1afc3511';
+import * as Cloud from './cloud.mjs?v=86fa1afc3511';
 const GITHUB_PAGES=true;
-import * as Accounts from './accounts.mjs?v=3686c5d51d02';
-import * as AssetAudit from './asset-audit.mjs?v=3686c5d51d02';
-import * as AssetControls from './asset-controls.mjs?v=3686c5d51d02';
-import * as Breakdown from './script-breakdown.mjs?v=3686c5d51d02';
+import * as Accounts from './accounts.mjs?v=86fa1afc3511';
+import * as AssetAudit from './asset-audit.mjs?v=86fa1afc3511';
+import * as AssetControls from './asset-controls.mjs?v=86fa1afc3511';
+import * as Breakdown from './script-breakdown.mjs?v=86fa1afc3511';
 let administratorRules=new Map(),administratorFrozen=new Map();
-import * as Collaboration from './collaboration.mjs?v=3686c5d51d02';
-import * as SB from './storyboard.mjs?v=3686c5d51d02';
-import * as Guide from './shot-guide.mjs?v=3686c5d51d02';
-import * as VT from './video-templates.mjs?v=3686c5d51d02';
-import * as VS from './virtual-stage-core.mjs?v=3686c5d51d02';
-import * as StageVideo from './stage-video.mjs?v=3686c5d51d02';
-import * as Stage from './virtual-stage.mjs?v=3686c5d51d02';
-import * as LanguageWriting from './language-writing.mjs?v=3686c5d51d02';
-import * as ScriptWorkbench from './script-workbench.mjs?v=3686c5d51d02';
-import {createImageWorkshop} from './image-workshop.mjs?v=3686c5d51d02';
-import {scriptDocx,scriptDocxFilename} from './script-docx.mjs?v=3686c5d51d02';
+import * as Collaboration from './collaboration.mjs?v=86fa1afc3511';
+import * as SB from './storyboard.mjs?v=86fa1afc3511';
+import * as Guide from './shot-guide.mjs?v=86fa1afc3511';
+import * as VT from './video-templates.mjs?v=86fa1afc3511';
+import * as VS from './virtual-stage-core.mjs?v=86fa1afc3511';
+import * as StageVideo from './stage-video.mjs?v=86fa1afc3511';
+import * as Stage from './virtual-stage.mjs?v=86fa1afc3511';
+import * as LanguageWriting from './language-writing.mjs?v=86fa1afc3511';
+import * as ScriptWorkbench from './script-workbench.mjs?v=86fa1afc3511';
+import {createImageWorkshop,imageRequest} from './image-workshop.mjs?v=86fa1afc3511';
+import {scriptDocx,scriptDocxFilename} from './script-docx.mjs?v=86fa1afc3511';
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)],E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let P,projects=[],mode=localStorage.getItem('jbp-mode')||'pro',page=typeof location!=='undefined'&&['video','shots','script','writing','image'].includes(new URLSearchParams(location.search).get('tool'))?new URLSearchParams(location.search).get('tool'):'home',selected=null,linkFrom=null,filter='all',search='',history=[],future=[],saveTimer,saveChain=Promise.resolve(),playback=null,renderJob=null,exporting=false,uiBusy=false;
 const icons={text:'▤',character:'♧',scene:'◫',prop:'◇',image:'▧',video:'▷',audio:'♫',output:'▣'};let cloudAccount=null,cloudList=[],cloudError='';let recording=null,requestingMic=false;let toastTimer;let uiRevision=0,preparingPlay=false;
@@ -150,7 +150,7 @@ const actions={
 'confirm-delete-asset':e=>{let id=e.dataset.id;if(asset(id)?.adminLocked)return toast('此资产由管理员锁定');change(()=>{P.assets=P.assets.filter(a=>a.id!==id);for(const n of P.nodes){n.assetIds=n.assetIds.filter(v=>v!==id);if(n.resultAssetId===id)n.resultAssetId='';for(const k of ['firstFrame','lastFrame'])if(n.params[k]===id)n.params[k]=''}P.shots.forEach(s=>{for(const k of ['assetId','reverseAssetId','otsFrom','otsTo','firstFrame','lastFrame'])if(s[k]===id)s[k]='';for(const [k] of SB.roles)if(Array.isArray(s[k]))s[k]=s[k].filter(v=>v!==id);delete s['emotion_'+id]});P.clips=P.clips.filter(c=>c.assetId!==id);C.rebuildSubtitles(P);for(const t of P.tasks)if(t.resultAssetId===id){t.resultAssetId='';t.status='blocked'}P.settings.videoRefs=(P.settings.videoRefs||[]).filter(v=>v!==id);for(const k of ['firstFrame','lastFrame'])if(P.settings[k]===id)P.settings[k]=''});close()},
 'download-asset':e=>{let a=asset(e.dataset.id);let link=document.createElement('a');link.href=a.src;link.download=a.name;link.click()},
 'asset-timeline':e=>{change(()=>addClip(asset(e.dataset.id)));toast('素材已加入时间线')},'image-edit':e=>asset(e.dataset.id)?.adminLocked?toast('此资产由管理员锁定'):imageEdit(e.dataset.id),
-'image-save':async e=>{const a=asset(e.dataset.id),im=await loadImage(a.src),ratio=$('#cropRatio').value;let w=im.width,h=im.height;if(ratio!=='原始'){let [rw,rh]=ratio.split(':').map(Number);if(w/h>rw/rh)w=h*rw/rh;else h=w*rh/rw}const canvas=document.createElement('canvas');const max=Math.min(1,2048/Math.max(w,h));canvas.width=Math.round(w*max);canvas.height=Math.round(h*max);let ctx=canvas.getContext('2d');ctx.filter=`brightness(${$('#brightness').value}) contrast(${$('#contrast').value}) saturate(${$('#saturation').value})`;ctx.drawImage(im,(im.width-w)/2,(im.height-h)/2,w,h,0,0,canvas.width,canvas.height);change(()=>P.assets.push({...a,id:C.uid(),name:a.name+' · 调整版',imageLibraryId:undefined,adminLocked:false,locked:false,src:canvas.toDataURL('image/png'),width:canvas.width,height:canvas.height,created:Date.now()}));close();toast('新图片已保存为资产')},
+ 'image-save':async e=>{const a=asset(e.dataset.id);if(!a||a.adminLocked)return toast('此图片已被管理员锁定');const expected=`${Accounts.current()?.id||'guest'}:${P.id}`,check=()=>{if(`${Accounts.current()?.id||'guest'}:${P.id}`!==expected)throw Error('账号或项目已切换，请重新打开图片')};try{const ratio=$('#cropRatio').value,grade={brightness:$('#brightness').value,contrast:$('#contrast').value,saturation:$('#saturation').value},im=await loadImage(a.src);check();let w=im.width,h=im.height;if(ratio!=='原始'){const [rw,rh]=ratio.split(':').map(Number);if(w/h>rw/rh)w=h*rw/rh;else h=w*rh/rw}const canvas=document.createElement('canvas'),max=Math.min(1,2048/Math.max(w,h));canvas.width=Math.round(w*max);canvas.height=Math.round(h*max);const ctx=canvas.getContext('2d');ctx.filter=`brightness(${grade.brightness}) contrast(${grade.contrast}) saturate(${grade.saturation})`;ctx.drawImage(im,(im.width-w)/2,(im.height-h)/2,w,h,0,0,canvas.width,canvas.height);const src=canvas.toDataURL('image/png');let saved=null;if(a.imageLibraryId&&Accounts.current()){saved=(await imageRequest('import',{requestId:C.uid(),projectId:P.id,projectTitle:P.title,name:(a.name+' · 调整版').slice(0,120),kind:['角色','场景','道具','分镜'].includes(a.type)?a.type:'分镜',prompt:a.description||'',dataUrl:src,metadata:{...(a.metadata||{}),parentImageId:a.imageLibraryId}})).item;check();}change(()=>P.assets.push({...a,id:saved?.id||C.uid(),name:saved?.name||a.name+' · 调整版',imageLibraryId:saved?.id,adminLocked:false,locked:false,src,width:canvas.width,height:canvas.height,created:saved?.created||Date.now(),metadata:saved?.metadata||a.metadata}));close();toast(saved?'调整版已另存到个人图库，不扣生成额度':'新图片已保存为项目资产')}catch(err){toast(memberError(err.message))}},
 'image-task':()=>goto('image'),'asset-task':()=>goto('image'),'create-generic-task':e=>{let id=$('#taskAsset').value;change(()=>P.tasks.unshift(task(e.dataset.kind,{name:$('#taskName').value||e.dataset.kind,prompt:$('#taskPrompt').value,assetIds:id?[id]:[]})));close();toast('任务已保存，等待服务接入')},
 'new-shot':()=>change(()=>P.shots.push({id:C.uid(),episode:'第一集',scene:'未指定场景',description:'',dialogue:'',duration:5,assetId:'',subtitle:'',camera:'固定',size:'中景'})),
 'move-shot':e=>{let i=P.shots.findIndex(s=>s.id===e.dataset.id),j=i+Number(e.dataset.dir);if(j<0||j>=P.shots.length)return;change(()=>[P.shots[i],P.shots[j]]=[P.shots[j],P.shots[i]])},'delete-shot':e=>change(()=>P.shots=P.shots.filter(s=>s.id!==e.dataset.id)),
@@ -222,17 +222,18 @@ scriptWorkbench=ScriptWorkbench.createScriptWorkbench({document,window,getProjec
  const check=()=>{if(`${Accounts.current()?.id||'guest'}:${P.id}`!==expected)throw Error('项目或账号已切换，请重新导入')};check();if(uiBusy||exporting||recording)throw Error('请先完成当前操作');uiBusy=true;
  try{await flush();check();const project=C.project(data.title);project.script=data.script;project.settings={...project.settings,...data.settings};project.story=structuredClone(data.story);project.story.importedAt=Date.now();await DB.put(project);check();P=project;projects=await DB.list();history=[];future=[];localStorage.setItem('jbp-active',P.id);page='writing';render();}finally{uiBusy=false;}
 }});
-imageWorkshop=createImageWorkshop({document,getProject:()=>P,getUser:()=>Accounts.current(),toast,onUse:async(item,src,context)=>{
+imageWorkshop=createImageWorkshop({document,getProject:()=>P,getUser:()=>Accounts.current(),toast,onNavigate:target=>goto(target),onDelete:async(id,context)=>{if(`${Accounts.current()?.id||'guest'}:${P.id}`!==context.expected)throw Error('账号或项目已切换');change(()=>{for(const a of P.assets.filter(a=>a.id===id||a.imageLibraryId===id))AssetControls.removeReferences(P,a.id)},false);await flush();},onUse:async(item,src,context)=>{
  const check=()=>{if(`${Accounts.current()?.id||'guest'}:${P.id}`!==context.expected)throw Error('项目或账号已切换，请重新选图')};check();
  if(uiBusy||exporting||recording)throw Error('请先完成当前操作');const im=await loadImage(src);check();
  if(P.adminAssetControls?.[item.id]?.deleted)throw Error('此图片已被管理员删除');
  if(context.nodeId&&P.nodes.find(n=>n.id===context.nodeId)?.locked)throw Error('节点已锁定');
  if(context.shotId&&!P.shots.some(s=>s.id===context.shotId))throw Error('目标分镜已删除，请重新选择');
  if(context.nodeId&&!P.nodes.some(n=>n.id===context.nodeId))throw Error('目标节点已删除，请重新选择');
- change(()=>{let a=P.assets.find(a=>a.id===item.id);if(!a){a={id:item.id,imageLibraryId:item.id,name:item.name,kind:'image',type:item.kind,src,width:im.width,height:im.height,created:item.created,locked:false,adminLocked:item.adminLocked,tags:'个人图库',description:item.prompt};P.assets.push(a)}
+ change(()=>{let a=P.assets.find(a=>a.id===item.id);if(!a){a={id:item.id,imageLibraryId:item.id,name:item.name,kind:'image',type:item.kind,src,width:im.width,height:im.height,created:item.created,locked:false,adminLocked:item.adminLocked,tags:'个人图库',description:item.prompt,metadata:item.metadata};P.assets.push(a)}
  if(context.shotId){const shot=P.shots.find(s=>s.id===context.shotId);if(['角色','场景','道具'].includes(item.kind)){const role={角色:'characters',场景:'locations',道具:'props'}[item.kind];shot[role]=[...new Set([...(shot[role]||[]),a.id])]}else shot.assetId=a.id;}
+ if(context.purpose?.startsWith('video-')){SB.appendVideoReferences(P,[a.id]);if(context.purpose==='video-first')P.settings.firstFrame=a.id;if(context.purpose==='video-last')P.settings.lastFrame=a.id;}
  if(context.nodeId){const n=P.nodes.find(n=>n.id===context.nodeId);if(n.locked)throw Error('节点已锁定');n.resultAssetId=a.id;n.assetIds=[...new Set([...n.assetIds,a.id])]}
- },false);await flush();check();
+ },false);await flush();check();if(context.purpose?.startsWith('video-'))goto('video');if(context.purpose==='adjust'){if(item.adminLocked)throw Error('管理员已锁定此图片');imageEdit(item.id);}
 }});
 Accounts.setWritingLauncher?.(()=>{goto('writing');scriptWorkbench.show('create')});
 const startupReady=boot();

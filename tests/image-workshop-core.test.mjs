@@ -226,3 +226,11 @@ test('storyboard template preserves exact action/dialogue and stable axis withou
   assert.throws(()=>buildImageWorkshopPrompt('角色',{aspect:'100:1'}),/画幅无效/);
   assert.equal(buildImageWorkshopPrompt('角色',{referenceCount:1,referenceIdentity:false}).prompt.includes('严格固定参考图人物身份'),false);
 });
+
+test('selected legacy entity settings retain their source relation and only creative allowlisted fields',()=>{
+ const raw=backup();Object.assign(raw.data.jingben_characters[0],{role:'守门人',age:'25',costume:'  旧青衫\n',password_hash:'PRIVATE-ENTITY-HASH',provider:'PRIVATE-ROUTING',public:true});
+ const preview=inspectImageWorkshopImport(raw),picked=select(preview,[preview.candidates[0].sourceId]).assets[0];
+ assert.deepEqual(picked.sourceEntity,{id:'c1',name:'阿青',fields:{role:'守门人',age:'25',appearance:'左眉有疤',costume:'  旧青衫\n'}});
+ const serialized=JSON.stringify(picked);assert.doesNotMatch(serialized,/PRIVATE-ENTITY-HASH|PRIVATE-ROUTING|password_hash|user_id|provider/);
+ picked.sourceEntity.fields.costume='本地改动';assert.equal(preview.candidates[0].sourceEntity.fields.costume,'  旧青衫\n');
+});

@@ -285,3 +285,11 @@ test('reference limit and empty prompt validation stop before any paid service r
   assert.equal(f.document.querySelectorAll('[data-image-ref]:checked').length,3);assert.match(f.host.textContent,/最多选择3张/);
   await f.click('[data-image-action="template"]');assert.match(f.document.querySelector('[data-image-field="prompt"]').value,/参考图/);
 });
+
+test('legacy import preserves stable entity slots and copies only selected creative definitions into the current project workspace',async t=>{
+ const f=fixture(t,s=>{s.requestImpl=c=>{if(c.action==='workspace')return c.body?{version:1,workspace:c.body.workspace}:{version:0,workspace:{entities:[],style:'',portraitStyle:''}};if(c.action==='slots')return {items:[]};};});await tick();
+ await f.uploadBackup(file(backup()));f.pick('image-workshop:old-own-image');f.confirm();await f.click('[data-image-action="import-selected"]');
+ const imported=f.state.calls.find(c=>c.action==='import');assert.match(imported.body.metadata.entityId,/^legacy-[0-9a-f]{64}$/);assert.equal(imported.body.metadata.slot,'front');assert.equal(imported.body.metadata.entityName,'迁入角色');
+ const settings=f.state.calls.find(c=>c.action==='workspace'&&c.body);assert.equal(settings.body.projectId,'project-a');assert.equal(settings.body.workspace.entities.length,1);assert.equal(settings.body.workspace.entities[0].id,imported.body.metadata.entityId);
+ const serialized=JSON.stringify(settings.body);assert.doesNotMatch(serialized,/PRIVATE-|password_hash|user_id|accessToken/);
+});
