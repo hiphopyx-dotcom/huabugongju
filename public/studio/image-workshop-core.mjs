@@ -156,6 +156,15 @@ function imageSource(raw) {
   return {src: raw, available: true, sourceAccess: 'remote'};
 }
 
+
+// Copy an explicit creative allowlist only. Entity relations never carry member
+// rows, ownership declarations, credentials, permissions, or provider routing.
+function sourceEntity(row, name) {
+  const fieldMap = {description:'description',role:'role',identityRegion:'identity_region',age:'age',gender:'gender',appearance:'appearance',costume:'costume',material:'material',usedBy:'used_by',heading:'heading',timeOfDay:'time_of_day',weather:'weather',atmosphere:'atmosphere',worldAnchors:'world_lock',extraPrompt:'extra_prompt'};
+  const fields = {};
+  for(const [target,key] of Object.entries(fieldMap)) if(typeof row[key]==='string') fields[target]=text(row[key],'原素材设定');
+  return {id:text(row.id,'原素材编号',256),name,fields};
+}
 function ownedIndex(list, owner, warnings, label) {
   const map = new Map(), duplicate = new Set();
   for (const row of list) {
@@ -211,7 +220,7 @@ export function inspectImageWorkshopImport(raw, options = {}) {
     const src = imageSource(row.image_url);
     const candidate = {
       sourceId, name: [entityName || mapped.kind, mapped.label].filter(Boolean).join(' · '),
-      kind: mapped.kind, category: mapped.category, sourceKind,
+      kind: mapped.kind, category: mapped.category, sourceKind,...(relation?{sourceEntity:sourceEntity(relation.row,entityName)}:{}),
       prompt: text(row.prompt, '原图片提示词'), ...src,
       sourceProjectTitle: project ? text(project.title, '原作品名称', 500) : '',
       sourceEpisode: episode ? [Number.isSafeInteger(episode.ep_no) && episode.ep_no > 0 ? `第${episode.ep_no}集` : '', text(episode.title, '原分集名称', 500)].filter(Boolean).join(' · ') : '',
@@ -251,6 +260,7 @@ export function selectImageWorkshopImport(preview, options = {}) {
     const out = {};
     for (const key of ['sourceId','name','kind','category','sourceKind','prompt','src','width','height','sourceAccess','sourceProjectTitle','sourceEpisode','sourceCreated','scope']) if (own(c, key)) out[key] = c[key];
     out.projectMeta = {...c.projectMeta};
+    if(c.sourceEntity)out.sourceEntity={...c.sourceEntity,fields:{...c.sourceEntity.fields}};
     assets.push(out);
   }
   return {format: 'image-workshop-selection-v1', assets, unavailable, warnings: [...inspected.warnings]};

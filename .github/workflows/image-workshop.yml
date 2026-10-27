@@ -19,7 +19,7 @@ jobs:
         working-directory: deploy
       - run: node --test tests/*.test.mjs deploy/tests/*.test.mjs tools/grok-mac-auth/*.test.mjs
       - run: npm install --prefix /tmp/jbp-writing-dom --no-save --no-audit --no-fund happy-dom@20
-      - run: node --test tests/image-workshop.dom.mjs tests/script-workbench.dom.mjs
+      - run: node --test tests/image-workshop.dom.mjs tests/image-workbench.dom.mjs tests/script-workbench.dom.mjs
       - run: node scripts/export-github-pages.mjs
       - run: node build.mjs && node --check public/app.mjs && node --check public/image-workshop.mjs
         working-directory: deploy

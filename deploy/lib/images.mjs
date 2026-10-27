@@ -11,6 +11,35 @@ const fail=(message='请求格式错误',status=400)=>{throw new AccountError(st
 const object=value=>!!value&&typeof value==='object'&&!Array.isArray(value);
 const keys=(value,allowed)=>{if(!object(value)||Object.keys(value).some(k=>!allowed.includes(k)))fail('请求字段无效');return value};
 function text(value,fallback,max){if(value===undefined)return fallback;if(typeof value!=='string'||value.length>max||/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value))fail('文字内容格式无效');return value.trim()||fallback}
+const METADATA_KEYS=['entityId','entityName','slot','episode','parentImageId','batchId'];
+const WORKSPACE_FIELDS=['description','role','identityRegion','age','gender','appearance','costume','material','usedBy','heading','timeOfDay','weather','atmosphere','worldAnchors','extraPrompt'];
+function identifier(value,label='记录标识',max=128,empty=false){
+ if(typeof value!=='string'||value.length>max||!(empty&&value==='')&&!/^[A-Za-z0-9_-]+$/.test(value))fail(label+'无效');return value;
+}
+function creativeMetadata(value){
+ if(value===undefined)return {};keys(value,METADATA_KEYS);const result={};
+ for(const key of METADATA_KEYS){if(!Object.hasOwn(value,key))continue;let v;
+  if(key==='entityName'||key==='episode')v=text(value[key],'',key==='entityName'?160:64);
+  else if(key==='parentImageId'){v=value[key];if(typeof v!=='string'||v!==''&&!UUID.test(v))fail('原图标识无效');v=v.toLowerCase()}
+  else v=identifier(value[key],'创作关联标识',key==='slot'?64:128,true);
+  if(v!=='')result[key]=v;
+ }
+ return result;
+}
+function metadataDto(value){const result={};if(object(value))for(const key of METADATA_KEYS)if(typeof value[key]==='string')result[key]=value[key];return result;}
+function workspaceText(value){if(typeof value!=='string'||value.length>8000||/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value))fail('创作内容格式无效');return value;}
+function workspaceData(value){
+ keys(value,['entities','style','portraitStyle']);if(!Array.isArray(value.entities)||value.entities.length>300)fail('工作区最多保存300个实体');
+ const seen=new Set(),entities=value.entities.map(entity=>{
+  keys(entity,['id','category','name','episode','scope','fields']);const id=identifier(entity.id,'实体标识');if(seen.has(id))fail('实体标识不能重复');seen.add(id);
+  if(!['characters','locations','props'].includes(entity.category)||!['series','episode'].includes(entity.scope))fail('实体类型或范围无效');
+  const name=text(entity.name,'',160);if(!name)fail('请填写实体名称');const episode=text(entity.episode,'',64),fields={};keys(entity.fields===undefined?{}:entity.fields,WORKSPACE_FIELDS);
+  for(const key of WORKSPACE_FIELDS)if(Object.hasOwn(entity.fields??{},key))fields[key]=workspaceText(entity.fields[key]);
+  return {id,category:entity.category,name,episode,scope:entity.scope,fields};
+ });
+ return {entities,style:value.style===undefined?'':workspaceText(value.style),portraitStyle:value.portraitStyle===undefined?'':workspaceText(value.portraitStyle)};
+}
+const emptyWorkspace=()=>({entities:[],style:'',portraitStyle:''});
 function base(value){try{const u=new URL(value);if(u.protocol!=='https:'||u.username||u.password||u.search||u.hash||/^(localhost|127\.|0\.|10\.|192\.168\.|169\.254\.|\[)/i.test(u.hostname)||/^172\.(1[6-9]|2[0-9]|3[01])\./.test(u.hostname))return '';return u.href.replace(/\/+$/,'')}catch{return ''}}
 /** Environment routing stays server-side. A generic key requires its explicit base. */
 export function imageServerConfig(env={}){
@@ -75,18 +104,18 @@ async function remoteGenerate(config,input){
   return {dataUrl:sniffData(result.data[0].b64_json)};
  }finally{clearTimeout(timer)}
 }
-function dto(i){return {id:i.id,projectId:i.project_id,name:i.name,kind:i.asset_kind,ratio:i.ratio,resolution:i.resolution,width:Number(i.width),height:Number(i.height),prompt:i.prompt,created:Number(i.created),contentUrl:`/api/images?action=content&id=${encodeURIComponent(i.id)}`,adminLocked:!!i.admin_locked,source:i.source}}
+function dto(i){return {id:i.id,projectId:i.project_id,name:i.name,kind:i.asset_kind,ratio:i.ratio,resolution:i.resolution,width:Number(i.width),height:Number(i.height),prompt:i.prompt,created:Number(i.created),contentUrl:`/api/images?action=content&id=${encodeURIComponent(i.id)}`,adminLocked:!!i.admin_locked,source:i.source,metadata:metadataDto(i.metadata)}}
 function jobDto(j){
  const reviewed=j.quota_state==='charged'||j.quota_state==='released',needsReview=j.status==='running'||(j.status==='uncertain'&&!reviewed);
- return {id:j.id,requestId:j.request_key,status:j.status,needsReview,error:j.status==='uncertain'&&reviewed?'管理员已核对额度，生成结果仍待确认':j.error||'',created:Number(j.created),...(j.item_id?{itemId:j.item_id}:{})};
+ return {id:j.id,requestId:j.request_key,status:j.status,needsReview,error:j.status==='uncertain'&&reviewed?'管理员已核对额度，生成结果仍待确认':j.error||'',created:Number(j.created),metadata:metadataDto(j.metadata),...(j.item_id?{itemId:j.item_id}:{})};
 }
 function payload(body,action){
- const common=['requestId','projectId','projectTitle','name','kind','prompt'];
+ const common=['requestId','projectId','projectTitle','name','kind','prompt','metadata'];
  keys(body,[...common,...(action==='generate'?['ratio','resolution','references']:['dataUrl','sourceId','sourceProjectTitle'])]);
  if(typeof body.requestId!=='string'||!UUID.test(body.requestId))fail('任务标识无效');
  if(!KINDS.includes(body.kind))fail('请选择角色、场景、道具或分镜');
  const data={requestId:body.requestId.toLowerCase(),projectId:text(body.projectId,'image-library',160),projectTitle:text(body.projectTitle,'图片库',160),name:text(body.name,body.kind+'图片',120),kind:body.kind,prompt:text(body.prompt,'',8000)};
- if(!/^[A-Za-z0-9_-]{1,128}$/.test(data.projectId))fail('项目标识无效');
+ identifier(data.projectId,'项目标识');const metadata=creativeMetadata(body.metadata);if(Object.keys(metadata).length)data.metadata=metadata;
  if(action==='generate'){
   if(!data.prompt)fail('请输入图片提示词');data.ratio=body.ratio??'9:16';data.resolution=typeof body.resolution==='string'?body.resolution.toLowerCase():'1k';
   if(!RATIOS.includes(data.ratio)||!RESOLUTIONS.includes(data.resolution))fail('图片比例或清晰度无效');
@@ -95,18 +124,18 @@ function payload(body,action){
  return data;
 }
 const IMAGE_JOIN=' FROM studio_images i JOIN studio_asset_records a ON a.owner=i.owner AND a.project_id=i.project_id AND a.asset_id=i.id';
-const ACTIVE_IMAGE='SELECT i.id,i.owner,i.project_id,i.name,i.asset_kind,i.ratio,i.resolution,i.width,i.height,i.prompt,i.created,i.source,a.admin_locked,a.admin_deleted'+IMAGE_JOIN;
+const ACTIVE_IMAGE='SELECT i.id,i.owner,i.project_id,i.name,i.asset_kind,i.ratio,i.resolution,i.width,i.height,i.prompt,i.created,i.source,i.metadata,a.admin_locked,a.admin_deleted'+IMAGE_JOIN;
 const IMAGE_DATA='SELECT i.*,a.admin_locked,a.admin_deleted'+IMAGE_JOIN;
 export function createImageHandler(query,config={}){
  const q=(sql,...args)=>query(sql,args),one=async(sql,...args)=>(await q(sql,...args))[0],quota=config.quota||createQuotaService(query);
  const provider={...config,key:typeof config.key==='string'?config.key.trim():'',baseUrl:base(config.baseUrl||'https://api.x.ai/v1'),model:typeof config.model==='string'&&config.model?config.model:'grok-imagine-image-2.0'};
  const configured=!!provider.key&&!!provider.baseUrl;
  const now=()=>config.now?.()??Date.now(),id=()=>config.randomUUID?.()??uuid();
- const image=async(owner,imageId,withData=false)=>one((withData?IMAGE_DATA:ACTIVE_IMAGE)+' WHERE i.owner=$1 AND i.id=$2 AND a.admin_deleted=false',owner,imageId);
+ const image=async(owner,imageId,withData=false)=>one((withData?IMAGE_DATA:ACTIVE_IMAGE)+' WHERE i.owner=$1 AND i.id=$2 AND a.admin_deleted=false AND i.member_deleted=false',owner,imageId);
  const jobs=async(owner)=>{
   await q("UPDATE studio_image_jobs SET status='uncertain',error='生成结果待核对，未重复调用；请联系管理员核对任务与额度',updated=$2 WHERE owner=$1 AND status='running' AND created<$3",owner,now(),now()-180000);
   // Include every unresolved job, even when it predates the recent-history window.
-  return (await q("SELECT j.id,j.request_key,j.status,j.error,j.created,j.item_id,e.state AS quota_state FROM studio_image_jobs j LEFT JOIN studio_quota_entries e ON e.owner=j.owner AND e.request_key='media:image:'||j.request_key WHERE j.owner=$1 AND (j.status='running' OR (j.status='uncertain' AND (e.state IS NULL OR e.state='reserved')) OR j.id IN (SELECT id FROM studio_image_jobs WHERE owner=$1 ORDER BY created DESC,id DESC LIMIT 30)) ORDER BY j.created DESC,j.id DESC",owner)).map(jobDto);
+  return (await q("SELECT j.id,j.request_key,j.status,j.error,j.created,j.item_id,j.metadata,e.state AS quota_state FROM studio_image_jobs j LEFT JOIN studio_quota_entries e ON e.owner=j.owner AND e.request_key='media:image:'||j.request_key WHERE j.owner=$1 AND (j.status='running' OR (j.status='uncertain' AND (e.state IS NULL OR e.state='reserved')) OR j.id IN (SELECT id FROM studio_image_jobs WHERE owner=$1 ORDER BY created DESC,id DESC LIMIT 30)) ORDER BY j.created DESC,j.id DESC",owner)).map(jobDto);
  };
  const publicJob=async(owner,job)=>{
   if(job.status!=='uncertain')return jobDto(job);
@@ -115,28 +144,54 @@ export function createImageHandler(query,config={}){
  return async req=>{
   try{
    safeOrigin(req);const currentTime=now(),url=new URL(req.url),action=url.searchParams.get('action')||'status';
-   const allowed=action==='list'?['action','page','pageSize']:action==='content'?['action','id','download']:['action'];if([...url.searchParams.keys()].some(k=>!allowed.includes(k)))fail('请求字段无效');
+   const allowed=['list','history'].includes(action)?['action','page','pageSize','projectId','kind','entityId','slot','episode','q']:action==='slots'?['action','projectId','entityId']:action==='workspace'&&req.method==='GET'?['action','projectId']:action==='content'?['action','id','download']:['action'];if([...url.searchParams.keys()].some(k=>!allowed.includes(k)))fail('请求字段无效');
    if(!['GET','POST'].includes(req.method))fail('请求方式无效',405);
    const raw=cookie(req),sessionHash=raw?hash(raw):'',user=raw?await one('SELECT a.* FROM studio_sessions s JOIN studio_accounts a ON a.id=s.user_id WHERE s.token_hash=$1 AND s.expires>$2 AND a.active=true AND s.version=a.session_version',sessionHash,currentTime):null;
    if(!user)fail('请先登录',401);
    if(req.method==='GET'){
     if(action==='status')return json({configured,capabilities:{kinds:KINDS,ratios:RATIOS,resolutions:RESOLUTIONS,...IMAGE_LIMITS},wallet:await quota.summary(user.id),rates:await quota.rates(),jobs:await jobs(user.id)});
-    if(action==='list'){
+    if(action==='workspace'){
+     const projectId=identifier(url.searchParams.get('projectId'),'项目标识'),saved=await one('SELECT workspace,version FROM studio_image_workspaces WHERE owner=$1 AND project_id=$2',user.id,projectId);
+     return json(saved?{workspace:saved.workspace,version:Number(saved.version)}:{workspace:emptyWorkspace(),version:0});
+    }
+    if(action==='slots'){
+     const projectId=identifier(url.searchParams.get('projectId'),'项目标识'),entityId=identifier(url.searchParams.get('entityId')||'','实体标识',128,true);
+     const rows=await q(ACTIVE_IMAGE.replace('SELECT ',"SELECT DISTINCT ON (i.metadata->>'entityId',i.metadata->>'slot') ")+" WHERE i.owner=$1 AND i.project_id=$2 AND a.admin_deleted=false AND i.member_deleted=false AND COALESCE(i.metadata->>'entityId','')<>'' AND COALESCE(i.metadata->>'slot','')<>'' AND ($3='' OR i.metadata->>'entityId'=$3) ORDER BY i.metadata->>'entityId',i.metadata->>'slot',i.created DESC,i.id DESC LIMIT 3300",user.id,projectId,entityId);
+     // DISTINCT ON chooses the latest visible version, including fallback after deletion.
+     return json({items:rows.map(dto)});
+    }
+    if(['list','history'].includes(action)){
      const page=Number(url.searchParams.get('page')||1),pageSize=Number(url.searchParams.get('pageSize')||24);if(!Number.isSafeInteger(page)||page<1||page>100000||!Number.isSafeInteger(pageSize)||pageSize<1||pageSize>24)fail('分页参数无效');
-     const items=await q(ACTIVE_IMAGE+' WHERE i.owner=$1 AND a.admin_deleted=false ORDER BY i.created DESC,i.id DESC LIMIT $2 OFFSET $3',user.id,pageSize,(page-1)*pageSize),total=await one('SELECT count(*) AS total FROM studio_images i JOIN studio_asset_records a ON a.owner=i.owner AND a.project_id=i.project_id AND a.asset_id=i.id WHERE i.owner=$1 AND a.admin_deleted=false',user.id);
+     const params=[user.id],conditions=['i.owner=$1','a.admin_deleted=false','i.member_deleted=false'];
+     for(const [key,field,max] of [['projectId','i.project_id',128],['entityId',"i.metadata->>'entityId'",128],['slot',"i.metadata->>'slot'",64]]){const value=url.searchParams.get(key)||'';identifier(value,'筛选标识',max,true);if(value){params.push(value);conditions.push(field+'=$'+params.length)}}
+     const kind=url.searchParams.get('kind')||'';if(kind&&!KINDS.includes(kind))fail('图片类型筛选无效');if(kind){params.push(kind);conditions.push('i.asset_kind=$'+params.length)}
+     const episode=text(url.searchParams.get('episode')??'','',64);if(episode){params.push(episode);conditions.push("i.metadata->>'episode'=$"+params.length)}
+     const search=text(url.searchParams.get('q')??'','',100);if(search){params.push('%'+search.toLowerCase().replace(/[!%_]/g,c=>'!'+c)+'%');conditions.push("lower(i.name||' '||i.prompt||' '||COALESCE(i.metadata->>'entityName','')) LIKE $"+params.length+" ESCAPE '!'")}
+     const where=' WHERE '+conditions.join(' AND '),total=await one('SELECT count(*) AS total'+IMAGE_JOIN+where,...params);
+     const items=await q(ACTIVE_IMAGE+where+' ORDER BY i.created DESC,i.id DESC LIMIT $'+(params.length+1)+' OFFSET $'+(params.length+2),...params,pageSize,(page-1)*pageSize);
      return json({items:items.map(dto),jobs:await jobs(user.id),page,pageSize,total:Number(total.total)});
     }
     if(action==='content'){
      const imageId=url.searchParams.get('id')||'';if(!UUID.test(imageId))fail('图片标识无效');
-     const saved=await one(IMAGE_DATA+' WHERE i.id=$1 AND (i.owner=$2 OR $3=true) AND a.admin_deleted=false',imageId,user.id,user.role==='admin');if(!saved)fail('图片不存在或无权访问',404);
+     const saved=await one(IMAGE_DATA+' WHERE i.id=$1 AND (i.owner=$2 OR $3=true) AND a.admin_deleted=false AND i.member_deleted=false',imageId,user.id,user.role==='admin');if(!saved)fail('图片不存在或无权访问',404);
      const file=validateImageData(saved.data_url),ext={"image/png":"png","image/jpeg":"jpg","image/webp":"webp"}[file.mime],filename=(saved.name||'图片').replace(/[\r\n"\\/]/g,'_').slice(0,120)+'.'+ext;
      return new Response(file.buffer,{headers:{...NO_STORE,'Content-Type':file.mime,'Content-Length':String(file.bytes),'Content-Disposition':(url.searchParams.get('download')==='1'?'attachment':'inline')+`; filename="image.${ext}"; filename*=UTF-8''${encodeURIComponent(filename).replace(/['()*]/g,c=>'%'+c.charCodeAt(0).toString(16).toUpperCase())}`,'Content-Security-Policy':"default-src 'none'; sandbox"}});
     }
     fail('图片接口不存在',404);
    }
-   if(!['generate','import'].includes(action))fail('图片接口不存在',404);
+   if(!['generate','import','workspace','delete'].includes(action))fail('图片接口不存在',404);
    let body;try{body=JSON.parse(await boundedText(req,IMAGE_LIMITS.requestBytes))}catch(e){if(e.status)throw e;fail('请求格式错误')}
+   if(action==='delete'){
+    keys(body,['id']);if(typeof body.id!=='string'||!UUID.test(body.id))fail('图片标识无效');
+    await one('SELECT studio_image_delete($1,$2,$3,$4,$5) AS result',user.id,sessionHash,user.session_version,body.id,now());return json({ok:true});
+   }
+   if(action==='workspace'){
+    keys(body,['projectId','workspace','version']);const projectId=identifier(body.projectId,'项目标识'),workspace=workspaceData(body.workspace);
+    if(!Number.isSafeInteger(body.version)||body.version<0||body.version>=2147483647)fail('工作区版本无效');
+    const saved=await one('SELECT studio_image_workspace_save($1,$2,$3,$4,$5::jsonb,$6,$7) AS result',user.id,sessionHash,user.session_version,projectId,JSON.stringify(workspace),body.version,now());return json(saved.result);
+   }
    const data=payload(body,action);
+   if(data.metadata?.parentImageId){const parent=await image(user.id,data.metadata.parentImageId);if(!parent)fail('原图不存在或无权访问',404);if(parent.admin_locked)fail('管理员已锁定原图，不能修改；仍可查看和使用',403);}
    if(action==='import'){
     const file=validateImageData(body.dataUrl),inputHash=hash(JSON.stringify({...data,contentHash:file.contentHash})),imageId=id();
     const saved={...data,...file,buffer:undefined,id:imageId,inputHash,source:'imported',ratio:'',resolution:'',contentUrl:url.origin+`/api/images?action=content&id=${imageId}`};
@@ -154,7 +209,7 @@ export function createImageHandler(query,config={}){
    if(start.result.started){
     try{
      const result=await (config.generate||((input)=>remoteGenerate(provider,input)))({prompt:data.prompt,ratio:data.ratio,resolution:data.resolution,references,requestId:data.requestId});
-     const file=validateImageData(result?.dataUrl),imageId=job.id,saved={...data,...file,buffer:undefined,references:undefined,referenceIds,id:imageId,inputHash,source:'generated',contentUrl:url.origin+`/api/images?action=content&id=${imageId}`};
+     const file=validateImageData(result?.dataUrl),imageId=job.id,saved={...data,...file,buffer:undefined,references:undefined,referenceIds:[...new Set([...referenceIds,...(data.metadata?.parentImageId?[data.metadata.parentImageId]:[])])],id:imageId,inputHash,source:'generated',contentUrl:url.origin+`/api/images?action=content&id=${imageId}`};
      job=(await one('SELECT studio_image_complete($1,$2,$3::jsonb,$4) AS job',user.id,job.id,JSON.stringify(saved),now())).job;
     }catch(e){
      // Never call the provider again for this request, including after a successful
@@ -169,7 +224,12 @@ export function createImageHandler(query,config={}){
    if(msg.includes('IMAGE_SESSION_CHANGED'))return json({error:'登录状态已变化，请重新登录'},401);
    if(msg.includes('IMAGE_REQUEST_CONFLICT'))return json({error:'任务标识已用于其他内容，请创建新任务'},409);
    if(msg.includes('IMAGE_SOURCE_CONFLICT'))return json({error:'此历史图片已导入且内容不同，请核对后重新选择'},409);
+   if(msg.includes('IMAGE_MEMBER_DELETED'))return json({error:'此图片已删除，不能通过重复导入恢复'},409);
+   if(msg.includes('IMAGE_PARENT_UNAVAILABLE'))return json({error:'原图已被锁定或删除，修改版未保存'},409);
+   if(msg.includes('IMAGE_LOCKED'))return json({error:'此图片已被管理员锁定，不能删除'},403);
+   if(msg.includes('IMAGE_MISSING'))return json({error:'图片不存在或无权访问'},404);
    if(msg.includes('IMAGE_DELETED'))return json({error:'此图片已被管理员删除，请联系管理员'},409);
+   if(msg.includes('IMAGE_WORKSPACE_CONFLICT'))return json({error:'工作区已在其他窗口更新，请刷新后再保存'},409);
    if(msg.includes('IMAGE_BUSY'))return json({error:'已有图片正在生成，请等待完成'},429);
    return json({error:e.status?e.message:'图片服务暂不可用，请稍后查看任务状态'},e.status||503);
   }
