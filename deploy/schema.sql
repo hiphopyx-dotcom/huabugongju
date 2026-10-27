@@ -35,3 +35,27 @@ INSERT INTO studio_quota_rates VALUES (1,2000,1000,0) ON CONFLICT(id) DO NOTHING
 CREATE TABLE IF NOT EXISTS studio_quota_entries (owner text NOT NULL REFERENCES studio_accounts(id), request_key text NOT NULL, kind text NOT NULL CHECK(kind IN ('text','image','video')), state text NOT NULL CHECK(state IN ('reserved','charged','released')), reserved bigint NOT NULL CHECK(reserved>0), charged bigint NOT NULL DEFAULT 0 CHECK(charged>=0 AND charged<=reserved), detail text NOT NULL, created bigint NOT NULL, updated bigint NOT NULL, PRIMARY KEY(owner,request_key));
 CREATE INDEX IF NOT EXISTS studio_quota_entries_owner_state ON studio_quota_entries(owner,state);
 CREATE TABLE IF NOT EXISTS studio_quota_audit (id text PRIMARY KEY, actor text NOT NULL REFERENCES studio_accounts(id), owner text, action text NOT NULL, detail text NOT NULL, created bigint NOT NULL);
+
+-- Independent, append-only review records. Does not modify existing projects.
+CREATE TABLE IF NOT EXISTS studio_script_reviews (
+  id text PRIMARY KEY,
+  owner text NOT NULL REFERENCES studio_accounts(id),
+  project_id text NOT NULL,
+  part_key text NOT NULL DEFAULT '全文',
+  request_key text NOT NULL,
+  source_hash text NOT NULL,
+  source_text text NOT NULL,
+  reference_text text NOT NULL,
+  step text NOT NULL DEFAULT 'write',
+  draft_one text NOT NULL DEFAULT '',
+  review_one text NOT NULL DEFAULT '',
+  draft_two text NOT NULL DEFAULT '',
+  review_two text NOT NULL DEFAULT '',
+  passed boolean NOT NULL DEFAULT false,
+  adopted boolean NOT NULL DEFAULT false,
+  error_text text NOT NULL DEFAULT '',
+  created bigint NOT NULL,
+  updated bigint NOT NULL,
+  UNIQUE(owner,request_key)
+);
+CREATE INDEX IF NOT EXISTS studio_script_reviews_by_user ON studio_script_reviews(owner,created DESC);

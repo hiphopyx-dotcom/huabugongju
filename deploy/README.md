@@ -57,3 +57,28 @@ Vercel 项目 Root Directory 为 deploy，启用 sourceFilesOutsideRootDirectory
 图片默认2,000/张、视频1,000/秒，均为可修改的站内估算系数，并非供应商真实 token 或货币价格。保存本地请求不扣额；“提交管理员生成”预占，管理员核对实际生成结果后结算，失败/取消释放。上传现有素材、绑定结果、本地白模预演不扣费。独立第三方页面的操作无法由本站计量。每个手机号独立记账，成员无权改变系数、总额度、他人的账本或媒体结算状态。调整系数不改变旧请求。
 
 验证：`node --test deploy/tests/quota.test.mjs`；`tests/quota-postgres.sql` 可在 PostgreSQL 中运行，校验预占、幂等、结算、额度下限及建单失败回滚；测试数据在同一语句内回滚。
+
+## 剧本双模型评审（2026-10 升级候选）
+
+功能分为两部分：页面内的本地**分集封板**和服务端独立**四阶段模型评审**。两者只操作当前工作台项目的剧本文本，不会自动覆盖用户本地手稿、分镜或媒体。
+
+### 服务端准备（正式上线前）
+
+1. 先完整备份生产数据库，再在对应 Neon 数据库执行 `review-schema.sql`。该迁移只新增 `studio_script_reviews` 表和索引，不删除或改写现有表。现有部署不会在请求中自动执行迁移。
+2. 在 Vercel 服务端设置 `OPENAI_API_KEY`、`GEMINI_API_KEY`，不要使用 `NEXT_PUBLIC_`、`VITE_` 或把密钥写进浏览器项目。可选 `OPENAI_WRITER_MODEL`（默认 `gpt-4.1`）、`GEMINI_REVIEW_MODEL`（默认 `gemini-2.5-flash`）、`JBP_REVIEW_DAILY_LIMIT`（默认每账号24小时15次新评审，最多100）。
+3. `deploy/api/review.js` 与现有 `/api/accounts` 共用手机账号会话，遵循同源写入校验；评审候选内容和评分仅允许任务提交者查询，工作端 token 不可访问。
+4. Vercel Function 每个阶段最长30秒（模型请求主动23秒超时）；浏览器将四阶段拆成四次请求，刷新后可查已保存的阶段。极端网络中断时可能触发已计费但未写入的情况：只有用户确认并超过3分钟才允许手动重试，不能自动重放。
+5. 用户从剧本页选择具体集数。四阶段：OpenAI初稿 → Gemini初评 → OpenAI按意见修订 → Gemini复评。初稿、初评、二稿、复评分别保留在独立记录里；默认须得分至少95，且无模型硬伤、无本地格式红线，才显示人工采纳入口。服务器只返回候选稿，采纳前校验原稿 SHA-256 与项目分集身份。未通过、不采纳均不影响正式稿。
+6. 本地分集封板存于项目的 `scriptSeals`，可随完整项目 JSON 备份。已有封板会阻止被封板集的正文修改、导入覆盖、模型回填覆盖；为了避免历史撤回绕过封板，在仍有封板时暂停全项目撤回/重做。封板保护是项目操作层的保护，不是数据库级不可篡改存证。
+
+### 验收要求
+
+在合并 PR 和执行迁移前，运行：
+```sh
+node --test deploy/tests/review.test.mjs deploy/tests/script-review-client.test.mjs deploy/tests/script-quality.test.mjs
+(cd deploy && node build.mjs)
+node --check pages/app.mjs
+node --check pages/script-review.mjs
+```
+
+自动化测试中的 OpenAI、Gemini 返回均为模拟，不产生真实费用；测试通过**不等于**真实 API 调通。必须在隔离的预览数据库，用真实且受预算约束的 API 调用单集后检查：联网响应、模型评分JSON、编辑冲突、封板拒绝写入、旧版项目导入与跨设备恢复、手机账号权限和收费额度。确认这些后再发布正式站点。
