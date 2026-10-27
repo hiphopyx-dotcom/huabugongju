@@ -4,6 +4,7 @@ import path from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {failure} from './relay.mjs';
 import {createBackend} from './backend.mjs';
+import {createImageStartupDiagnostic,persistImageStartupDiagnostic} from './image-diagnostics.mjs';
 
 const TYPES = {'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8',
   '.mjs':'text/javascript; charset=utf-8','.js':'text/javascript; charset=utf-8',
@@ -62,8 +63,12 @@ if(process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.arg
   const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)),'public');
   const {neon} = await import('@neondatabase/serverless');
   const sql = neon(process.env.DATABASE_URL);
+  let imageConfiguration;
   const apiHandler = await createBackend({publicOrigin,libraryRoot:new URL('./deploy/lib/',import.meta.url),
-    query:(text,params) => sql.query(text,params,{fetchOptions:{signal:AbortSignal.timeout(25_000)}}),env:process.env});
+    query:(text,params) => sql.query(text,params,{fetchOptions:{signal:AbortSignal.timeout(25_000)}}),env:process.env,
+    onImageConfiguration:configuration => {imageConfiguration = configuration;}});
   const handle = await createStudioApp({publicDir,apiHandler});
   createNodeServer(handle,publicOrigin).listen(9000,'0.0.0.0');
+  void createImageStartupDiagnostic()(imageConfiguration).then(result => persistImageStartupDiagnostic(
+    (text,params) => sql.query(text,params,{fetchOptions:{signal:AbortSignal.timeout(25_000)}}), result));
 }

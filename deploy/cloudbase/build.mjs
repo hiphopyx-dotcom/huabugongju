@@ -38,7 +38,7 @@ await fs.cp(path.join(root,'deploy/lib'),path.join(output,'deploy/lib'),{recursi
 await fs.mkdir(path.join(staticDir,'studio'));
 for(const name of ['core.mjs','collab-core.mjs','model-privacy.mjs','token-estimate.mjs'])
   await fs.copyFile(path.join(root,'public/studio',name),path.join(staticDir,'studio',name));
-for(const name of ['server.mjs','backend.mjs','relay.mjs','scf_bootstrap'])
+for(const name of ['server.mjs','backend.mjs','relay.mjs','image-diagnostics.mjs','scf_bootstrap'])
   await fs.copyFile(path.join(source,name),path.join(output,name));
 await fs.chmod(path.join(output,'scf_bootstrap'),0o755);
 // The locked production dependency is pure JavaScript, with no runtime dependencies.
