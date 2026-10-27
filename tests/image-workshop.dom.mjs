@@ -11,6 +11,15 @@ try {dom = await import('happy-dom');}
 catch {dom = await import(pathToFileURL(process.env.HAPPY_DOM_MODULE || '/tmp/jbp-writing-dom/node_modules/happy-dom/lib/index.js').href);}
 const {Window} = dom;
 const tick = async () => {for (let i=0;i<4;i++) await new Promise(resolve => setImmediate(resolve));};
+// Native Web Crypto promises are not tracked by Happy DOM's task manager.
+// Wait for the relevant request/UI state with a deadline instead of a turn count.
+const waitFor = async (condition,description,timeoutMs=2000) => {
+  const deadline=performance.now()+timeoutMs;
+  for(;;){const result=condition();if(result)return result;
+    assert.ok(performance.now()<deadline,'Timed out waiting for '+description);
+    await new Promise(resolve=>setTimeout(resolve,1));
+  }
+};
 const deferred = () => {let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
 const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jr1kAAAAASUVORK5CYII=';
 const image = (id='image-a', name='本人图片') => ({id,name,kind:'角色',source:'generated',prompt:'同一角色',created:1792970000000});
@@ -232,6 +241,7 @@ test('backup is parsed locally; only an explicit confirmed selection is uploaded
   assert.equal(f.document.querySelectorAll('[data-image-import-id]').length,2);
   f.pick('image-workshop:old-own-image');await f.click('[data-image-action="import-selected"]');assert.equal(f.state.calls.some(c=>c.action==='import'),false);
   f.confirm();await f.click('[data-image-action="import-selected"]');
+  await waitFor(()=>/已导入 1 张/.test(f.host.textContent),'selected image import completion');
   const imported=f.state.calls.filter(c=>c.action==='import');assert.equal(imported.length,1);assert.equal(imported[0].body.dataUrl,png);assert.equal(imported[0].body.prompt,'保留原提示词');assert.equal(imported[0].body.sourceId,'image-workshop:old-own-image');
   const wire=JSON.stringify(imported[0].body);
   for(const privatePart of ['old-own-user','PRIVATE-PHONE','PRIVATE-PASSWORD-HASH','PRIVATE-ACCESS-TOKEN','UNSELECTED-CREATIVE-TEXT','jingben_members','jingben_images','password_hash'])assert.equal(wire.includes(privatePart),false,privatePart);
@@ -242,7 +252,9 @@ test('a scope switch while a selected historical image is uploading stops the re
   for(const mode of ['account','project'])await t.test(mode,async t=>{
     const gate=deferred();const f=fixture(t,s=>{s.requestImpl=c=>c.action==='import'?gate.promise:undefined;});await tick();
     await f.uploadBackup(file(backup()));f.pick('image-workshop:old-own-image');f.pick('image-workshop:old-unselected');f.confirm();
-    await f.click('[data-image-action="import-selected"]');assert.equal(f.state.calls.filter(c=>c.action==='import').length,1);
+    await f.click('[data-image-action="import-selected"]');
+    await waitFor(()=>f.state.calls.some(c=>c.action==='import'),'first historical image upload');
+    assert.equal(f.state.calls.filter(c=>c.action==='import').length,1);
     if(mode==='account')f.state.user={id:'user-b'};else f.state.project=project('project-b');
     f.api.render(f.host);await tick();gate.resolve({item:image('late-import','旧导入结果')});await tick();
     const uploads=f.state.calls.filter(c=>c.action==='import');assert.equal(uploads.length,1);assert.equal(uploads[0].userId,'user-a');assert.equal(uploads[0].body.projectId,'project-a');
@@ -263,6 +275,7 @@ test('remote image failures stay visible and retryable while successful selected
   const f=fixture(t,s=>{s.fetchImpl=async()=>({ok:false});});await tick();const raw=backup();
   raw.data.jingben_images[1].image_url='https://images.example.test/unavailable.png';
   await f.uploadBackup(file(raw));f.pick('image-workshop:old-own-image');f.pick('image-workshop:old-unselected');f.confirm();await f.click('[data-image-action="import-selected"]');
+  await waitFor(()=>/已导入 1 张；未导入 1 张/.test(f.host.textContent),'selected image import settlement');
   assert.equal(f.state.calls.filter(c=>c.action==='import').length,1);assert.match(f.host.textContent,/已导入 1 张；未导入 1 张/);assert.match(f.host.textContent,/原图片地址读取失败/);
   assert.equal(f.pick('image-workshop:old-own-image',false).disabled,true);assert.equal(f.pick('image-workshop:old-unselected',false).disabled,false);
   assert.equal(f.state.fetches.length,1);assert.equal(f.state.fetches[0].options.credentials,'omit');assert.equal(f.state.fetches[0].options.referrerPolicy,'no-referrer');
@@ -287,9 +300,18 @@ test('reference limit and empty prompt validation stop before any paid service r
 });
 
 test('legacy import preserves stable entity slots and copies only selected creative definitions into the current project workspace',async t=>{
- const f=fixture(t,s=>{s.requestImpl=c=>{if(c.action==='workspace')return c.body?{version:1,workspace:c.body.workspace}:{version:0,workspace:{entities:[],style:'',portraitStyle:''}};if(c.action==='slots')return {items:[]};};});await tick();
+ const loadGate=deferred(),saveGate=deferred();
+ const f=fixture(t,s=>{s.requestImpl=c=>{if(c.action==='workspace')return c.body?saveGate.promise:loadGate.promise;if(c.action==='slots')return {items:[]};};});await tick();
  await f.uploadBackup(file(backup()));f.pick('image-workshop:old-own-image');f.confirm();await f.click('[data-image-action="import-selected"]');
+ await waitFor(()=>f.state.calls.some(c=>c.action==='workspace'&&!c.body),'imported entity workspace read');
+ assert.equal(f.state.calls.some(c=>c.action==='workspace'&&c.body),false,'workspace save must wait for its version');
+ assert.doesNotMatch(f.host.querySelector('[data-image-message]').textContent,/已导入 1 张/);
+ loadGate.resolve({version:0,workspace:{entities:[],style:'',portraitStyle:''}});
+ const settings=await waitFor(()=>f.state.calls.find(c=>c.action==='workspace'&&c.body),'imported entity workspace save');
  const imported=f.state.calls.find(c=>c.action==='import');assert.match(imported.body.metadata.entityId,/^legacy-[0-9a-f]{64}$/);assert.equal(imported.body.metadata.slot,'front');assert.equal(imported.body.metadata.entityName,'迁入角色');
- const settings=f.state.calls.find(c=>c.action==='workspace'&&c.body);assert.equal(settings.body.projectId,'project-a');assert.equal(settings.body.workspace.entities.length,1);assert.equal(settings.body.workspace.entities[0].id,imported.body.metadata.entityId);
+ assert.equal(settings.body.projectId,'project-a');assert.equal(settings.body.workspace.entities.length,1);assert.equal(settings.body.workspace.entities[0].id,imported.body.metadata.entityId);
  const serialized=JSON.stringify(settings.body);assert.doesNotMatch(serialized,/PRIVATE-|password_hash|user_id|accessToken/);
+ assert.doesNotMatch(f.host.querySelector('[data-image-message]').textContent,/已导入 1 张/);
+ saveGate.resolve({version:1,workspace:settings.body.workspace});
+ await waitFor(()=>/已导入 1 张/.test(f.host.querySelector('[data-image-message]').textContent),'workspace-backed import completion');
 });
