@@ -1,0 +1,35 @@
+name: Verify Tencent CloudBase adapter
+on:
+  pull_request:
+    paths:
+      - 'deploy/**'
+      - 'public/studio/**'
+      - 'pages/**'
+      - 'scripts/export-github-pages.mjs'
+      - '.github/workflows/cloudbase.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'deploy/**'
+      - 'public/studio/**'
+      - 'pages/**'
+      - 'scripts/export-github-pages.mjs'
+      - '.github/workflows/cloudbase.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: deploy/package-lock.json
+      - run: npm ci --ignore-scripts --prefix deploy
+      - run: node --test deploy/cloudbase/tests/*.test.mjs
+      - run: node scripts/export-github-pages.mjs
+      - run: node deploy/cloudbase/build.mjs "$RUNNER_TEMP/jbp-cloudbase-release"
+        env:
+          JBP_SOURCE_COMMIT: ${{ github.sha }}
