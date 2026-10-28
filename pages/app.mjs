@@ -111,7 +111,7 @@ function openShotComposition(shotId){
   const list=files.filter(a=>a.type===type);
   return `<section class="section"><h3>${type}</h3><div class="asset-grid">${list.map(a=>`<label class="asset-card"><div class="asset-preview">${mediaHTML(a)}</div><input type="checkbox" data-compose-image value="${a.id}" ${selected.has(a.id)?'checked':''}> ${E(a.name)}</label>`).join('')||'<small>没有此类基础图，可返回图片生成制作。</small>'}</div></section>`;
  }).join('');
- openModal(`<h2>分镜素材融合 · ${E(shot.scene||'当前镜头')}</h2><p class="muted">勾选这一镜要出现的人物、场景、道具。只关联已属于当前项目的基础图片；不会复制原图或修改其他分镜。</p>${sections}<div class="row wrap">${button('保存镜头素材组合','shot-compose-confirm',`data-id="${shotId}"`,'primary')}${button('回到基础图片生成','page','data-page="image"')}</div>`,true);
+ openModal(`<h2>分镜素材融合 · ${E(shot.scene||'当前镜头')}</h2><p class="muted">勾选这一镜要出现的人物、场景、道具。只关联已属于当前项目的基础图片；不会复制原图或修改其他分镜。</p>${sections}<div class="row wrap">${button('保存镜头素材组合','shot-compose-confirm',`data-id="${shotId}"`,'primary')}${button('回到基础图片生成','shot-compose-to-image')}</div>`,true);
 }
 function videoPairsPanel(){
  const pairs=Pipeline.stillPairs(P);
@@ -223,6 +223,7 @@ const actions={
 'shot-reference-upload':e=>{const el=document.querySelector(`[data-shot-reference-file="${e.dataset.id}"][data-key="${e.dataset.key}"]`);if(!el)return toast('请重新打开分镜上传入口');el.click()},
 'image-script-import':()=>{imageImportActive=true;breakdown.importDialog()},'image-derive':()=>imageWorkshop.openFlowTab('breakdown'),
 'shot-compose':e=>openShotComposition(e.dataset.id),
+'shot-compose-to-image':()=>{close();goto('image')},
 'shot-compose-confirm':e=>{const id=e.dataset.id,ids=$$('#modalBody [data-compose-image]:checked').map(v=>v.value);change(()=>Pipeline.bindComposition(P,id,ids));close();toast('已绑定'+ids.length+'张本项目基础图；接下来生成本镜单帧融合图')},
 'video-pair-use':e=>{const config=Pipeline.videoBetweenStills(P,e.dataset.from,e.dataset.to);change(()=>{P.settings.videoMethod='首尾帧';P.settings.firstFrame=config.firstFrame;P.settings.lastFrame=config.lastFrame;P.settings.videoSequence=false;P.settings.videoRatio=config.ratio;P.settings.videoDuration=config.duration;P.settings.videoTransitionPrompt=config.prompt;P.settings.videoSourcePair={fromId:config.fromId,toId:config.toId}});toast('已选定相邻分镜，接下来设置视频运镜、色调、焦距并用已绑定 Grok 会员生成')},
 'new-shot':()=>change(()=>P.shots.push({id:C.uid(),episode:'第一集',scene:'未指定场景',description:'',dialogue:'',duration:5,assetId:'',subtitle:'',camera:'固定',size:'中景'})),

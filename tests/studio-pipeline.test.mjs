@@ -18,7 +18,7 @@ test('four stages are unambiguous and existing scripts may enter at image step',
  assert.match(src,/导入已有剧本并拆解/);assert.match(src,/imageImportActive/);
  assert.match(src,/onShots:\(\)=>\{if\(imageImportActive\)/);
  assert.match(src,/imageWorkshop\.openFlowTab\('breakdown'\)/);
- assert.match(src,/分镜素材融合/);
+ assert.match(src,/分镜素材融合/);assert.match(src,/shot-compose-to-image/);
 });
 test('images are drawn only from this project and classified by character, scene and prop',()=>{
  const p=sample(); assert.deepEqual(Pipeline.imageCounts(p),{'角色':1,'场景':1,'道具':1});
