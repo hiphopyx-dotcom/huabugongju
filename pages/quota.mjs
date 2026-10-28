@@ -1,4 +1,4 @@
-import {estimateText,estimateMedia,TEXT_OUTPUT_HOLD} from './token-estimate.mjs?v=87cd18e84f87';
+import {estimateText,estimateMedia,TEXT_OUTPUT_HOLD} from './token-estimate.mjs?v=74aaa9591dc5';
 const E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const N=v=>v==null?'不限额':Number(v).toLocaleString('zh-CN');
 let viewer=null,cached=null,cacheTime=0,pending=null;
