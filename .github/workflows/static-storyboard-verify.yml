@@ -1,0 +1,44 @@
+name: Verify static storyboard and project reference library
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'pages/**'
+      - 'tests/shot-reference-library.test.mjs'
+      - 'tests/studio-pipeline.test.mjs'
+      - 'tests/video-shot-script.test.mjs'
+      - '.github/workflows/static-storyboard-verify.yml'
+  push:
+    branches: [fix/static-storyboard-reference-library-20261028]
+permissions:
+  contents: read
+jobs:
+  static-shot-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install isolated deploy dependencies
+        working-directory: deploy
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify syntax and project reference isolation
+        run: |
+          node --check pages/app.mjs
+          node --check pages/storyboard.mjs
+          node --check pages/shot-reference-library.mjs
+          node --check pages/studio-pipeline.mjs
+          node --check pages/video-shot-script.mjs
+          node --check pages/image-workshop.mjs
+          node --test tests/shot-reference-library.test.mjs tests/studio-pipeline.test.mjs tests/video-shot-script.test.mjs
+      - name: All regression suites
+        run: |
+          node --test tests/*.test.mjs
+          (cd deploy && npm test && node build.mjs)
+          node --check deploy/public/app.mjs
+          node --check deploy/public/storyboard.mjs
+          test -f deploy/public/shot-reference-library.mjs
+          test -f deploy/public/studio-pipeline.mjs
+          test -f deploy/public/video-shot-script.mjs
