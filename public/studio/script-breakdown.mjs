@@ -1,6 +1,7 @@
 import * as C from './core.mjs';
 import {groups} from './storyboard.mjs';
 import {breakScript} from './pianchang-parse.mjs';
+import {docText,rtfText} from './script-legacy.mjs';
 
 const MAX_TEXT=300000,MAX_XML=6000000;
 export const escape=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -55,8 +56,28 @@ export function textFromXML(xml,Parser=globalThis.DOMParser){
 export async function readScript(file){
  if(!file||file.size>20*1024*1024)throw Error('请选择20MB以内的剧本文件');
  const ext=file.name.split('.').at(-1).toLowerCase();
- if(!['txt','md','docx'].includes(ext))throw Error('支持 TXT、DOCX、MD；旧版 DOC 或 PDF 请先另存为 DOCX / TXT');
- const data=await file.arrayBuffer();return ext==='docx'?textFromXML(await docxXML(data)):decodeText(data);
+ if(!['txt','md','doc','docx','dotx','rtf','fountain','fdx','html','htm','xml'].includes(ext))throw Error('支持 Word、RTF、TXT、MD、Fountain、FDX、HTML、XML；PDF 请先另存为 Word');
+ const data=await file.arrayBuffer();
+ if(['docx','dotx'].includes(ext))return textFromXML(await docxXML(data));
+ if(ext==='doc')return cleanText(docText(data));
+ const text=decodeText(data);
+ if(ext==='rtf')return cleanText(rtfText(text));
+ if(['fdx','html','htm','xml'].includes(ext))return textFromMarkup(text,ext);
+ return text;
+}
+export function textFromMarkup(text,format,Parser=globalThis.DOMParser){
+ if(/<!ENTITY/i.test(text)||format!=='html'&&format!=='htm'&&/<!DOCTYPE/i.test(text))throw Error('剧本文件包含不支持的文档声明');
+ const html=['html','htm'].includes(format),doc=new Parser().parseFromString(text,html?'text/html':'application/xml');
+ if(doc.querySelector('parsererror'))throw Error('剧本文件格式损坏，请另存为 DOCX 或 TXT');
+ if(html){
+  for(const el of doc.querySelectorAll('script,style,iframe,object,template'))el.remove();
+  const walk=node=>node.nodeType===3?node.textContent:node.nodeType!==1?'':(node.localName==='br'?'\n':[...node.childNodes].map(walk).join('')+(/^(p|div|h[1-6]|tr|li|section|article)$/.test(node.localName)?'\n':''));
+  return cleanText(walk(doc.body));
+ }
+ if(doc.getElementsByTagNameNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main','p').length)return textFromXML(text,Parser);
+ if(doc.getElementsByTagName('Paragraph').length)return cleanText([...doc.getElementsByTagName('Paragraph')].map(p=>p.textContent).join('\n'));
+ const blocks=[...doc.querySelectorAll('sceneheading,action,dialogue,p')];
+ return cleanText(blocks.length?blocks.map(p=>p.textContent).join('\n'):doc.documentElement.textContent);
 }
 
 export function lines(text){return C.scriptRows(cleanText(text)).map(({kind,...row})=>row)}
