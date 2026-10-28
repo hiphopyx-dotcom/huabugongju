@@ -1,4 +1,4 @@
-import * as V from './virtual-stage-core.mjs?v=db324af5aedb';
+import * as V from './virtual-stage-core.mjs?v=87cd18e84f87';
 // Deliberately local and deterministic: this creates an editable blocking draft, not AI geometry.
 export function planStage({brief='',duration=5,shot={},assets=[]}={}){
  const text=String(brief||[shot.scene,shot.description].filter(Boolean).join('，')).slice(0,8000);

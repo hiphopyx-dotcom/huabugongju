@@ -1,5 +1,6 @@
 import * as C from './core.mjs';
 import {groups} from './storyboard.mjs';
+import {breakScript} from './pianchang-parse.mjs';
 
 const MAX_TEXT=300000,MAX_XML=6000000;
 export const escape=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -100,9 +101,29 @@ export function parseResult(raw,batch){
 export function bindReferences(shots,assets){return shots.map(s=>{
  const shot={...s,id:C.uid()};for(const [role,names,type] of [['characters',s.characterNames,'角色'],['props',s.propNames,'道具'],['locations',s.locationNames,'场景']])shot[role]=assets.filter(a=>a.kind==='image'&&a.type===type&&(names||[]).includes(a.name)).map(a=>a.id);return shot;
  })}
+function speakerName(dialogue){const line=String(dialogue||'').split('\n')[0]||'';const m=line.match(/^(?:VO\s*)?([\u4e00-\u9fffA-Za-z·]{1,12})/);return m?m[1].replace(/（[^）]*）/g,''):''}
+export function shotsFromBreak(parsed){
+ const chars=(parsed.characters||[]).map(c=>c.name);
+ const props=(parsed.props||[]).map(p=>p.name);
+ const locByHeading=new Map((parsed.locations||[]).map(l=>[l.heading,l.name]));
+ return (parsed.beats||[]).map(b=>{
+  const text=[b.action,b.dialogue].filter(Boolean).join('\n');
+  const speaker=speakerName(b.dialogue);
+  const characterNames=[...new Set([...chars,speaker].filter(n=>n&&text.includes(n)))];
+  const place=locByHeading.get(b.scene_heading)||'';
+  return {episode:b.episode||'第一集',scene:b.scene_heading||'分镜',sourceText:(b.script_excerpt||text).slice(0,2000),sourceLines:[],description:(b.action||b.dialogue||b.script_excerpt||'分镜').slice(0,2000),dialogue:b.dialogue||'',duration:b.duration_sec,nextGap:b.next_gap_sec,startSec:b.start_sec,assetId:'',subtitle:'',camera:'固定镜头',size:b.shot_type==='全景'?'全景':'中景',angle:b.shot_type==='过肩镜头'?'过肩镜头':'眼睛平视',characterNames,locationNames:place?[place]:[],propNames:props.filter(n=>text.includes(n)),continuity:b.continuity_notes||'',breakdownMethod:'pianchang',shotType:b.shot_type};
+ });
+}
+export function breakdownCards(b){
+ if(!b)return '';
+ const people=(b.characters||[]).map(c=>`<li><strong>${escape(c.name)}</strong>${[c.role,c.age,c.gender].filter(x=>x&&x!=='角色').length?` <small>${escape([c.role,c.age,c.gender].filter(x=>x&&x!=='角色').join(' · '))}</small>`:''}<p class="muted">${escape(c.appearance||'外貌待补')}</p>${c.costume?`<p class="muted">服装：${escape(c.costume)}</p>`:''}</li>`).join('');
+ const places=(b.locations||[]).map(l=>`<li><strong>${escape(l.name)}</strong><p class="muted">${escape(l.heading||'')}${l.time_of_day?` · ${escape(l.time_of_day)}`:''}</p><p>${escape(l.description||'空间待补')}</p></li>`).join('');
+ const props=(b.props||[]).map(item=>`<li><strong>${escape(item.name)}</strong> <small>${escape(item.category||'道具')}</small><p class="muted">${escape(item.description||'剧本点名的道具')}</p></li>`).join('');
+ return `<section class="section"><h3>人物 ${(b.characters||[]).length}</h3>${people?`<ul>${people}</ul>`:'<p class="muted">先拆解。人物从「人物：」和场次里的人名来，不凭空加。</p>'}</section><section class="section"><h3>场景 ${(b.locations||[]).length}</h3>${places?`<ul>${places}</ul>`:'<p class="muted">先拆解。场景从「1-1 日 内 客厅」这种场次来。</p>'}</section><section class="section"><h3>道具 ${(b.props||[]).length}</h3>${props?`<ul>${props}</ul>`:'<p class="muted">本集没有单独列出的关键道具。要收进来，在剧本里写一行「道具：」。</p>'}</section>`;
+}
 export const batchKey=batch=>JSON.stringify(batch.lines.map(l=>[l.n,l.raw,l.episode,l.scene]));
-export function workspace(p){const job=p.scriptBreakdown;
- return `<section class="section"><h3>剧本 → 连续分镜</h3><p>① 导入 TXT / DOCX / MD 或粘贴全文　② 选择本地 / AI 拆分　③ 核对原文后加入分镜表</p><p class="muted">本地按动作、台词分段，不调用模型。AI 会补充景别、机位、运镜、镜长与连续性；逐场分批，每批单独提交。拆分不自动生成图片或视频。</p>${job?`<p class="notice">上次 AI 拆镜：${escape(job.label)} · ${escape(job.status==='done'?(job.applied?'已加入分镜表':'已完成，等待核对'):job.status==='failed'?'未完成':job.status==='submitting'?'提交待确认':'已提交，可刷新查看')}</p><button data-breakdown="job">${job.status==='done'?'查看上次结果':'刷新 AI 拆镜任务'}</button>`:''}</section>`;
+export function workspace(p){const job=p.scriptBreakdown;const saved=p.breakdown;const fresh=saved&&saved.script===p.script;
+ return `<section class="section"><h3>剧本拆解</h3><p>跟片场一样：先拆人物、场景、道具，再拆连续分镜。每一镜钉着原文。</p><p class="muted">按片场拆解不调用模型。台词用过肩镜头，一场的第一镜用全景，其余用中景。镜长按字数收在 3–15 秒，镜与镜间隔 0.5 秒。只更新条目，不会清掉已经出过的图。模型拆镜仍逐场提交。</p>${job?`<p class="notice">上次 AI 拆镜：${escape(job.label)} · ${escape(job.status==='done'?(job.applied?'已加入分镜表':'已完成，等待核对'):job.status==='failed'?'未完成':job.status==='submitting'?'提交待确认':'已提交，可刷新查看')}</p><button data-breakdown="job">${job.status==='done'?'查看上次结果':'刷新 AI 拆镜任务'}</button>`:''}${saved?(fresh?breakdownCards(saved)+`<p class="muted">连续分镜 ${saved.beats?.length||0} 条已在分镜表。</p>`:'<p class="notice">剧本改过了，下面还是上一版拆解。请再按片场拆一次。</p>'):''}</section>`;
 }
 
 export function create({getProject,getUser,request,change,stateChange=change,openModal,close,toast,onShots,isBusy=()=>false,document:doc=globalThis.document}){
@@ -114,11 +135,12 @@ export function create({getProject,getUser,request,change,stateChange=change,ope
  function importDialog(){setup={...stamp()};show(`<h2>导入剧本，拆分镜头</h2><p>支持 TXT、DOCX、MD（20MB以内），也可直接粘贴。DOCX 只读取正文，不导入图片和页眉页脚。</p><button data-breakdown="file">选择剧本文件</button><p id="breakdownFile" class="muted"></p><label class="field">剧本原文<textarea id="breakdownInput" rows="12" placeholder="第一集&#10;1-1 日 内 客厅&#10;人物：小林&#10;△小林推门进来。&#10;小林：我回来了。"></textarea></label><p id="breakdownError" role="alert" class="form-error"></p><p class="notice">导入会替换当前项目的剧本文字，已有分镜和素材保留。确认后自动保存，可撤销。</p><button data-breakdown="import" class="primary">确认导入剧本</button>`)}
  function chooseFile(){const token={...setup},modal=dialog,input=doc.createElement('input');input.type='file';input.accept='.txt,.docx,.md';input.onchange=async()=>{if(!input.files?.[0])return;busy=true;const button=$('[data-breakdown="import"]');if(button)button.disabled=true;try{const text=await readScript(input.files[0]);if(!current(token)||modal!==dialog||!$('#breakdownInput'))return;$('#breakdownInput').value=text;$('#breakdownFile').textContent=`${input.files[0].name} · ${text.length} 字`;}catch(e){if(current(token)&&modal===dialog)error(e)}finally{busy=false;if(button)button.disabled=false}};input.click()}
  function saveImport(){if(!setup||!current(setup))throw Error('项目或账号已切换，请重新导入');const text=cleanText($('#breakdownInput').value);change(()=>{getProject().script=text;getProject().episodes=[...new Set(lines(text).filter(l=>l.content).map(l=>l.episode))].map(name=>({id:C.uid(),name}))});preview=null;close();toast('剧本已导入，请选择本地拆分或 AI 拆分')}
- function previewShots(shots,source,jobId=''){
-  if(!shots.length)throw Error('没有找到可拆分的动作或台词');const p=getProject();preview={...stamp(),script:p.script,shots:JSON.stringify(p.shots),result:shots,source,jobId,applied:false};
-  show(`<h2>核对拆镜结果</h2><p>${escape(source)} · ${shots.length} 个镜头 · 建议总时长 ${shots.reduce((n,s)=>n+s.duration,0).toFixed(1)} 秒</p><p class="notice">先核对画面与台词；原文逐镜保留。人物、场景、道具只会匹配本项目内同名参考图，未匹配的可在分镜表补选。追加保留原镜头；替换会移除当前 ${p.shots.length} 个镜头，已有画布和时间线不会自动重建。</p><div class="breakdown-preview">${shots.map((s,i)=>`<article class="section"><h3>镜头 ${i+1} · ${escape(s.episode)} / ${escape(s.scene)}</h3><p>${escape(s.size)} · ${escape(s.angle||'眼睛平视')} · ${escape(s.camera)} · ${s.duration} 秒</p><strong>画面</strong><p class="breakdown-source">${escape(s.description)}</p>${s.dialogue?`<strong>台词 / 声音</strong><p class="breakdown-source">${escape(s.dialogue)}</p>`:''}<details open><summary>对应剧本原文</summary><blockquote class="breakdown-source">${escape(s.sourceText)}</blockquote></details>${s.continuity?`<p>连续性：${escape(s.continuity)}</p>`:''}<small>人物：${escape((s.characterNames||[]).join('、')||'未标注')}　道具：${escape((s.propNames||[]).join('、')||'未标注')}</small></article>`).join('')}</div><p id="breakdownError" role="alert" class="form-error"></p><div class="row wrap"><button data-breakdown="append" class="primary">确认追加到分镜表</button>${p.shots.length?'<button data-breakdown="replace" class="danger">确认替换原分镜</button>':''}</div>`);
+ function previewShots(shots,source,jobId='',breakdown=null){
+  if(!shots.length&&!breakdown)throw Error('没有找到可拆分的动作或台词');const p=getProject();preview={...stamp(),script:p.script,shots:JSON.stringify(p.shots),result:shots,source,jobId,applied:false,breakdown};
+  const head=breakdown?`<h2>核对片场拆解</h2><p>${escape(source)} · 人物 ${(breakdown.characters||[]).length} · 场景 ${(breakdown.locations||[]).length} · 道具 ${(breakdown.props||[]).length} · 连续分镜 ${shots.length} · 建议总时长 ${shots.reduce((n,s)=>n+s.duration,0).toFixed(1)} 秒</p>`:`<h2>核对拆镜结果</h2><p>${escape(source)} · ${shots.length} 个镜头 · 建议总时长 ${shots.reduce((n,s)=>n+s.duration,0).toFixed(1)} 秒</p>`;
+  show(`${head}<p class="notice">先核对人物、场景、道具和每一镜的原文。同名参考图才会绑上，没有图的名字留在分镜表里补。追加保留原镜头；替换会移除当前 ${p.shots.length} 个镜头。已有图片不会被删。</p>${breakdown?breakdownCards(breakdown):''}<h3>连续分镜 ${shots.length}</h3><div class="breakdown-preview">${shots.map((s,i)=>`<article class="section"><h3>#${String(i+1).padStart(2,'0')} · ${escape(s.shotType||s.size)} · ${escape(s.angle||'眼睛平视')} · ${s.duration} 秒${s.nextGap?` · 间隔 ${s.nextGap} 秒`:''}</h3><p class="muted">${escape(s.episode)} / ${escape(s.scene)}</p><strong>画面</strong><p class="breakdown-source">${escape(s.description)}</p>${s.dialogue?`<strong>台词</strong><p class="breakdown-source">${escape(s.dialogue)}</p>`:''}<details open><summary>对应剧本原文</summary><blockquote class="breakdown-source">${escape(s.sourceText)}</blockquote></details><small>人物：${escape((s.characterNames||[]).join('、')||'未标注')}　场景：${escape((s.locationNames||[]).join('、')||'未标注')}　道具：${escape((s.propNames||[]).join('、')||'未标注')}</small></article>`).join('')||'<p class="muted">这一份没有可拍的镜头。</p>'}</div><p id="breakdownError" role="alert" class="form-error"></p><div class="row wrap"><button data-breakdown="append" class="primary">确认写入</button>${p.shots.length?'<button data-breakdown="replace" class="danger">确认替换原分镜</button>':''}</div>`);
  }
- function local(){const p=getProject();previewShots(C.parseScript(p.script),'本地规则拆分（未调用模型）')}
+ function local(){const p=getProject();const text=String(p.script||'').trim();if(!text)throw Error('请先导入或写上剧本');const parsed=breakScript(text);if(!parsed.beats.length&&!parsed.characters.length&&!parsed.locations.length)throw Error('没有拆出人物、场景或分镜。请按片场格式写：1-1 日 内 客厅 / 人物： / △动作 / 人名：台词');previewShots(shotsFromBreak(parsed),'按片场拆解（不调用模型）','',parsed)}
  async function aiSetup(){
   const p=getProject();if(!getUser())throw Error('请先登录，再使用 AI 拆镜；本地拆分不需要登录');
   if(p.scriptBreakdown&&!['done','failed'].includes(p.scriptBreakdown.status))return job();
@@ -159,7 +181,7 @@ export function create({getProject,getUser,request,change,stateChange=change,ope
  }
  function apply(replace){
   const p=getProject(),v=preview;if(!v||!current(v)||v.applied)throw Error('预览已过期，请重新拆分');if(p.script!==v.script||JSON.stringify(p.shots)!==v.shots)throw Error('剧本或分镜已修改，请重新核对拆分结果');
-  const shots=bindReferences(v.result,p.assets);change(()=>{p.shots=replace?shots:[...p.shots,...shots];if(replace)p.scriptBreakdownApplied=[];if(v.jobId&&p.scriptBreakdown?.jobId===v.jobId){p.scriptBreakdown.applied=true;(p.scriptBreakdownApplied||=[]).push({key:batchKey(p.scriptBreakdown.batch),count:shots.length,created:Date.now()})}});v.applied=true;close();onShots();toast(`${shots.length} 个镜头已${replace?'替换':'追加'}，可编辑并绑定参考图`);
+  const shots=bindReferences(v.result,p.assets);change(()=>{if(shots.length||replace)p.shots=replace?shots:[...p.shots,...shots];if(v.breakdown)p.breakdown={characters:v.breakdown.characters,locations:v.breakdown.locations,props:v.breakdown.props,beats:v.breakdown.beats,method:'pianchang',script:p.script};if(replace)p.scriptBreakdownApplied=[];if(v.jobId&&p.scriptBreakdown?.jobId===v.jobId){p.scriptBreakdown.applied=true;(p.scriptBreakdownApplied||=[]).push({key:batchKey(p.scriptBreakdown.batch),count:shots.length,created:Date.now()})}});v.applied=true;close();onShots();const listed=v.breakdown?`人物 ${v.breakdown.characters.length}，场景 ${v.breakdown.locations.length}，道具 ${v.breakdown.props.length}，`:'';toast(`${listed}${shots.length} 个镜头已${replace?'替换':'写入'}。已有图片还在，可到分镜表改。`);
  }
  const actions={file:chooseFile,import:saveImport,submit,job,append:()=>apply(false),replace:()=>apply(true)};
  doc.addEventListener('click',async e=>{const b=e.target.closest('[data-breakdown]');if(!b||b.disabled||busy||isBusy())return;const action=actions[b.dataset.breakdown];if(!action)return;busy=true;b.disabled=true;try{await action()}catch(err){error(err)}finally{busy=false;b.disabled=false}});
