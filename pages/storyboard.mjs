@@ -19,8 +19,8 @@ export function shotData(p,s,reverse=false){
  const parts=[
  `静态电影分镜照片：只描绘一个确定瞬间、一张画面，不能表现前后多个时间点；不生成视频、声音、对白字幕或运动轨迹。`,
  `场次：${s.scene}`,`本镜定格画面：${s.description||'请补充这个瞬间的画面构图'}`,
- ...groups.filter(([key])=>!['camera','technique'].includes(key)).map(([key,label,list,fallback])=>{const selected=value(s,key,fallback);const opt=list.find(o=>o.id===selected);return selected?`${label}：${selected}${opt?' / '+opt.prompt:''}`:''}),
- s.focalLength&&`焦距：${s.focalLength} mm`,s.aperture&&`光圈：${s.aperture}`,
+ ...groups.filter(([key])=>['size','angle','framing'].includes(key)).map(([key,label,list,fallback])=>{const selected=value(s,key,fallback);const opt=list.find(o=>o.id===selected);return selected?`${label}：${selected}${opt?' / '+opt.prompt:''}`:''}),
+
  `画幅：${s.ratio||p.settings.ratio}；分辨率：${s.resolution||p.settings.storyResolution||'1K'}`,
  style&&`本项目风格锁：${style}`,
  ots&&`过肩${reverse?'反打':'正打'}：过 ${image(p,from)?.name||'未指定'} 的肩，拍 ${image(p,to)?.name||'未指定'} 的脸。${s.otsBlock||'保持视线轴和空间关系，不越轴。'}`,
@@ -37,7 +37,7 @@ export function videoLanguage(p){
  const selected=p.settings.videoLanguage||{},params={},parts=[];
  for(const [key,label,options,fallback] of groups){const option=options.find(o=>o.id===selected[key])||options.find(o=>o.id===fallback);params[key]=option?.id||'';if(option?.id)parts.push(`${label}：${option.id} / ${option.prompt}`);}
  const focal=String(p.settings.videoFocalLength||''),aperture=String(p.settings.videoAperture||'');params.focalLength=['18','24','35','50','85','100','135'].includes(focal)?focal:'';params.aperture=['f/1.4','f/2','f/2.8','f/4','f/5.6','f/8','f/11'].includes(aperture)?aperture:'';
- params.styleLock=String(p.settings.storyStyle||'');if(params.focalLength)parts.push(`焦距：${params.focalLength} mm`);if(params.aperture)parts.push(`光圈：${params.aperture}`);if(params.styleLock)parts.push(`本项目风格锁：${params.styleLock}`);
+ params.styleLock=String(p.settings.storyStyle||'');params.colorGrade=String(p.settings.videoColorGrade||'自然写实');if(params.focalLength)parts.push(`焦距：${params.focalLength} mm`);if(params.aperture)parts.push(`光圈：${params.aperture}`);if(params.styleLock)parts.push(`本项目风格锁：${params.styleLock}`);if(params.colorGrade)parts.push(`视频色调：${params.colorGrade}`);
  return {params,prompt:parts.join('\n')};
 }
 // A video can carry an ordered shot schedule rather than an unordered reference pool.

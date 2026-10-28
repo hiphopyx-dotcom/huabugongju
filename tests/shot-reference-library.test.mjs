@@ -46,10 +46,10 @@ test('visible storyboard panel does not mix in dialogue, subtitles, source text 
  assert.ok(panel.includes("shotText(s,'description','静态画面描述'"));
  assert.ok(src.includes('data-shot-reference-file='));
  assert.ok(panel.includes('data-shot-result-file='));
- assert.ok(panel.includes('使用已分配 Grok 会员制作静态图'));
+ assert.ok(panel.includes('生成融合后单帧图'));
  assert.ok(!panel.includes("imageWorkshop.show({...SB.shotData"));
  for(const key of ['dialogue','subtitle','sourceText','startSec','nextGap','video-veo'])assert.ok(!panel.includes(`data-key="${key}"`)&&!panel.includes(`shotText(s,'${key}'`));
- assert.ok(panel.includes("!['camera','technique'].includes(key)"));
+ assert.ok(panel.includes("['size','angle','framing'].includes(key)"));
  assert.ok(src.includes('grokAccount'), 'existing Grok membership account assignment must remain');
  assert.ok(src.includes('准备已分配 Grok 会员视频')); assert.ok(!src.includes('veo-video.mjs'));
 });
