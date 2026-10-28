@@ -1,0 +1,36 @@
+name: Verify integrated screenplay review
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'pages/**'
+      - 'deploy/**'
+      - '.github/workflows/integration-review-verify.yml'
+  push:
+    branches: [integration/review-20261028]
+permissions:
+  contents: read
+jobs:
+  review-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install server test dependencies
+        working-directory: deploy
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Validate integrated application syntax
+        run: |
+          node --check pages/app.mjs
+          node --check pages/script-review.mjs
+          node --check pages/script-quality.mjs
+          node --check deploy/lib/review.mjs
+      - name: Run server and integration regression tests
+        working-directory: deploy
+        run: node --test tests/*.test.mjs
+      - name: Build Vercel workbench preview
+        working-directory: deploy
+        run: node build.mjs
