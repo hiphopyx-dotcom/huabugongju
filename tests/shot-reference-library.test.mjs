@@ -36,14 +36,14 @@ test('photo storyboard prompt has no spoken dialogue, subtitle, motion, schedule
  const p=project();Refs.attachReferences(p,'shot1','props',[{name:'旧铜钥匙.png',src:png,width:900,height:900}],()=> 'prop1');
  const d=SB.shotData(p,p.shots[0]);assert.match(d.prompt,/静态电影分镜照片/);assert.match(d.prompt,/女主手握门把手/);
  assert.match(d.prompt,/旧铜钥匙/);assert.doesNotMatch(d.prompt,/角色：站住！|镜长 5 秒|缓慢推进|对应剧本原文：/);
- assert.equal(d.params.duration,5);assert.equal(d.params.sourceText,p.script);
+ assert.equal(d.params.duration,5);assert.equal(d.params.sourceText,undefined);assert.equal(p.shots[0].sourceText,p.script);
  assert.deepEqual(d.assetIds,['prop1']); // a completed shot image and video-only first/last frames are not references
  const rows=SB.stillCsvRows(p);assert.equal(rows.length,2);assert.ok(rows[0].includes('单帧定格画面'));assert.ok(!rows[0].includes('台词')&&!rows[0].includes('字幕'));assert.equal(rows[0].length,rows[1].length);
 });
 test('visible storyboard panel does not mix in dialogue, subtitles, source text or video timing inputs',()=>{
  const src=readFileSync(new URL('../pages/app.mjs',import.meta.url),'utf8');
  const panel=src.slice(src.indexOf('function shotsPage(){'),src.indexOf('function canvasPage(){'));
- assert.ok(panel.includes("shotText(s,'description','静态画面描述'"));
+ assert.ok(!panel.includes("shotText(s,'description'"));
  assert.ok(src.includes('data-shot-reference-file='));
  assert.ok(panel.includes('data-shot-result-file='));
  assert.ok(panel.includes('使用已有分镜模型生成'));

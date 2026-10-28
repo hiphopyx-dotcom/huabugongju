@@ -6,6 +6,7 @@ on:
       - 'pages/**'
       - 'tests/shot-reference-library.test.mjs'
       - 'tests/studio-pipeline.test.mjs'
+      - 'tests/video-shot-script.test.mjs'
       - '.github/workflows/static-storyboard-verify.yml'
   push:
     branches: [fix/static-storyboard-reference-library-20261028]
@@ -29,8 +30,9 @@ jobs:
           node --check pages/storyboard.mjs
           node --check pages/shot-reference-library.mjs
           node --check pages/studio-pipeline.mjs
+          node --check pages/video-shot-script.mjs
           node --check pages/image-workshop.mjs
-          node --test tests/shot-reference-library.test.mjs tests/studio-pipeline.test.mjs
+          node --test tests/shot-reference-library.test.mjs tests/studio-pipeline.test.mjs tests/video-shot-script.test.mjs
       - name: All regression suites
         run: |
           node --test tests/*.test.mjs
@@ -39,3 +41,4 @@ jobs:
           node --check deploy/public/storyboard.mjs
           test -f deploy/public/shot-reference-library.mjs
           test -f deploy/public/studio-pipeline.mjs
+          test -f deploy/public/video-shot-script.mjs
