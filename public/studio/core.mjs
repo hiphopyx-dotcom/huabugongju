@@ -6,17 +6,33 @@ export function connect(p,from,to){if(from===to)throw Error('不能连接自身'
 export function upstream(p,id){let seen=new Set();function walk(v){for(const e of p.edges.filter(e=>e.to===v))if(!seen.has(e.from)){seen.add(e.from);walk(e.from)}}walk(id);return p.nodes.filter(n=>seen.has(n.id))}
 export function inputs(p,id){const n=p.nodes.find(n=>n.id===id);if(!n)throw Error('节点不存在');const list=[...upstream(p,id),n];return {prompt:list.map(n=>n.prompt.trim()).filter(Boolean).join('\n\n'),assets:[...new Set(list.flatMap(n=>n.assetIds))].map(id=>p.assets.find(a=>a.id===id)).filter(Boolean),nodes:list.map(n=>n.id)}}
 export function removeNode(p,id){p.nodes=p.nodes.filter(n=>n.id!==id);p.edges=p.edges.filter(e=>e.from!==id&&e.to!==id)}
+const EPISODE_HEAD=/^第[一二三四五六七八九十百千零〇两\d]+[集话回](?:\s|$|[：:、.])/;
+const SCENE_HEAD=/^(?:第[一二三四五六七八九十百\d]+场|(?:场景|场次)[：:]|\d+[—–－-]\d+|(?:INT\.|EXT\.|内景|外景))/i;
+const CAST_HEAD=/^(?:人物|出场人物|角色)[：:]/;
+export function scriptRows(text){
+ const body=String(text??'').replace(/\r\n?/g,'\n').split('\n');
+ const anyScene=body.some(raw=>SCENE_HEAD.test(raw.trim()));
+ let episode='第一集',scene='未指定场景',cast=[],inScene=!anyScene;
+ return body.map((raw,index)=>{
+  const s=raw.trim();let kind='blank',content=false;
+  if(!s)kind='blank';
+  else if(EPISODE_HEAD.test(s)){episode=s;scene='未指定场景';cast=[];if(anyScene)inScene=false;kind='episode'}
+  else if(SCENE_HEAD.test(s)){scene=s;cast=[];inScene=true;kind='scene'}
+  else if(CAST_HEAD.test(s)){cast=s.replace(/^[^：:]+[：:]\s*/,'').split(/[、,，；;]/).map(x=>x.trim()).filter(Boolean);kind='cast'}
+  else {kind='body';content=inScene}
+  return {n:index+1,raw,text:s,episode,scene,cast:[...cast],content,kind};
+ });
+}
 export function parseScript(text){
- let scene='未指定场景',episode='第一集',cast=[],shots=[],last=null;
- for(const [index,raw] of text.replace(/\r\n?/g,'\n').split('\n').entries()){
-  const s=raw.trim();if(!s)continue;
-  if(/^第[一二三四五六七八九十百千零〇两\d]+[集话回](?:\s|$|[：:、.])/.test(s)){episode=s;scene='未指定场景';cast=[];last=null;continue}
-  if(/^(?:第[一二三四五六七八九十百\d]+场|(?:场景|场次)[：:]|\d+[—–－-]\d+|(?:INT\.|EXT\.|内景|外景))/i.test(s)){scene=s;cast=[];last=null;continue}
-  if(/^(?:人物|出场人物|角色)[：:]/.test(s)){cast=s.replace(/^[^：:]+[：:]\s*/,'').split(/[、,，；;]/).map(x=>x.trim()).filter(Boolean);continue}
+ let shots=[],last=null;
+ for(const row of scriptRows(text)){
+  if(row.kind==='episode'||row.kind==='scene'){last=null;continue}
+  if(!row.content)continue;
+  const s=row.text;
   const subtitle=s.match(/^[△▲]?字幕[：:](.+)/),dialogue=!/^[△▲]/.test(s)&&/^[^：:]{1,30}[：:]/.test(s);
-  const names=[...new Set([...cast.filter(n=>s.includes(n)),...(dialogue?[s.split(/[：:]/)[0].replace(/[（(].*$/,'').trim()]:[])])];
-  if(dialogue&&last){last.dialogue+=(last.dialogue?'\n':'')+s;last.sourceText+='\n'+s;last.sourceLines.push(index+1);last.characterNames=[...new Set([...last.characterNames,...names])];continue}
-  last={id:uid(),episode,scene,sourceText:s,sourceLines:[index+1],description:subtitle?subtitle[1]:dialogue?'人物对话（请补充画面）':s.replace(/^[△▲]\s*/,''),dialogue:dialogue?s:'',duration:subtitle?3:5,assetId:'',subtitle:subtitle?subtitle[1]:'',camera:'固定镜头',size:subtitle?'特写':'中景',angle:'眼睛平视',characterNames:names,locationNames:[scene],propNames:[],breakdownMethod:'local'};
+  const names=[...new Set([...row.cast.filter(n=>s.includes(n)),...(dialogue?[s.split(/[：:]/)[0].replace(/[（(].*$/,'').trim()]:[])])];
+  if(dialogue&&last){last.dialogue+=(last.dialogue?'\n':'')+s;last.sourceText+='\n'+s;last.sourceLines.push(row.n);last.characterNames=[...new Set([...last.characterNames,...names])];continue}
+  last={id:uid(),episode:row.episode,scene:row.scene,sourceText:s,sourceLines:[row.n],description:subtitle?subtitle[1]:dialogue?'人物对话（请补充画面）':s.replace(/^[△▲]\s*/,''),dialogue:dialogue?s:'',duration:subtitle?3:5,assetId:'',subtitle:subtitle?subtitle[1]:'',camera:'固定镜头',size:subtitle?'特写':'中景',angle:'眼睛平视',characterNames:names,locationNames:[row.scene],propNames:[],breakdownMethod:'local'};
   shots.push(last);
  }
  return shots;

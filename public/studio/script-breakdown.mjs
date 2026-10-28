@@ -58,13 +58,7 @@ export async function readScript(file){
  const data=await file.arrayBuffer();return ext==='docx'?textFromXML(await docxXML(data)):decodeText(data);
 }
 
-export function lines(text){let episode='第一集',scene='未指定场景',cast=[];return cleanText(text).split('\n').map((raw,index)=>{
- const s=raw.trim();let content=!!s;
- if(/^第[一二三四五六七八九十百千零〇两\d]+[集话回](?:\s|$|[：:、.])/.test(s)){episode=s;scene='未指定场景';cast=[];content=false}
- else if(/^(?:第[一二三四五六七八九十百\d]+场|(?:场景|场次)[：:]|\d+[—–－-]\d+|(?:INT\.|EXT\.|内景|外景))/i.test(s)){scene=s;cast=[];content=false}
- else if(/^(?:人物|出场人物|角色)[：:]/.test(s)){cast=s.replace(/^[^：:]+[：:]\s*/,'').split(/[、,，；;]/).map(x=>x.trim()).filter(Boolean);content=false}
- return {n:index+1,raw,text:s,episode,scene,cast:[...cast],content};
- })}
+export function lines(text){return C.scriptRows(cleanText(text)).map(({kind,...row})=>row)}
 export function batches(text){
  const all=lines(text),out=[];let current=[],length=0,count=0;
  const push=()=>{if(current.length)out.push({lines:current,label:`${current[0].episode} · ${current[0].scene} · 原文 ${current[0].n}–${current.at(-1).n} 行`});current=[];length=0;count=0};
