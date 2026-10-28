@@ -18,7 +18,7 @@ import * as StageVideo from './stage-video.mjs?v=116d0d9f6244';
 import * as Stage from './virtual-stage.mjs?v=116d0d9f6244';
 import * as LanguageWriting from './language-writing.mjs?v=116d0d9f6244';
 import * as ScriptWorkbench from './script-workbench.mjs?v=116d0d9f6244';
-import {createImageWorkshop,imageRequest} from './image-workshop.mjs?v=116d0d9f6244';
+import {createImageWorkshop,imageRequest} from './image-workshop.mjs?v=shotcontent0003';
 import {scriptDocx,scriptDocxFilename} from './script-docx.mjs?v=116d0d9f6244';
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)],E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const projectSelection=createProjectSelection(localStorage);let projectScope='guest';
