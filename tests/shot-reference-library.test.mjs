@@ -46,8 +46,8 @@ test('visible storyboard panel does not mix in dialogue, subtitles, source text 
  assert.ok(panel.includes("shotText(s,'description','静态画面描述'"));
  assert.ok(src.includes('data-shot-reference-file='));
  assert.ok(panel.includes('data-shot-result-file='));
- assert.ok(panel.includes('生成融合后单帧图'));
- assert.ok(!panel.includes("imageWorkshop.show({...SB.shotData"));
+ assert.ok(panel.includes('使用已有分镜模型生成'));
+ assert.ok(panel.includes("imageWorkshop.show({...SB.shotData")); // Existing native storyboard generation and adoption path preserved
  for(const key of ['dialogue','subtitle','sourceText','startSec','nextGap','video-veo'])assert.ok(!panel.includes(`data-key="${key}"`)&&!panel.includes(`shotText(s,'${key}'`));
  assert.ok(panel.includes("['size','angle','framing'].includes(key)"));
  assert.ok(src.includes('grokAccount'), 'existing Grok membership account assignment must remain');
@@ -65,6 +65,6 @@ test('membership handoff uses existing assigned module URLs rather than the paid
  const start=app.indexOf('function openShotGrokHandoff(');const end=app.indexOf('async function importMedia(',start);
  assert.ok(start>0&&end>start);
  const block=app.slice(start,end);
- assert.match(block,/module-open&amp;module=storyboard/);assert.match(block,/module-open&amp;module=image/);
+ assert.match(block,/module-open&amp;module=storyboard/);assert.doesNotMatch(block,/module-open&amp;module=image/);assert.match(block,/shot-native-open/);
  assert.ok(!block.includes('imageRequest(')&&!block.includes("request('generate'"));
 });

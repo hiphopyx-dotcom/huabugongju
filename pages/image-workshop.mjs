@@ -109,5 +109,5 @@ export function createImageWorkshop({document,getProject,getUser,request=imageRe
  }
  function render(target){unmount();host=target;if(scope!==key())reset();else busy=false;host.addEventListener('click',click);host.addEventListener('input',input);host.addEventListener('change',input);host.addEventListener('submit',submit);draw();refresh();}
  function show(data={}){if(scope!==key())reset();draft={...draft,name:data.name||draft.name,kind:kinds.includes(data.kind)?data.kind:'分镜',prompt:data.prompt??draft.prompt,ratio:ratios.includes(data.params?.ratio)?data.params.ratio:draft.ratio,resolution:String(data.params?.resolution||draft.resolution).toLowerCase()==='2k'?'2k':'1k',refs:(data.assetIds||draft.refs).filter(id=>getProject().assets.some(a=>a.id===id&&a.kind==='image')).slice(0,3),libraryRefs:(data.libraryRefs||[]).slice(0,3),metadata:data.metadata||null,shotId:data.shotId||'',nodeId:data.nodeId||''};if(host)draw();}
- return {render,unmount,show,refresh,openFlowTab:tab=>flow.selectTab(tab)};
+ return {render,unmount,show,refresh,openFlowTab:(tab,shotId='')=>flow.selectTab(tab,shotId)};
 }
