@@ -63,7 +63,7 @@ function fixture(t, configure = () => {}) {
     onUse:async(item,dataUrl,options)=>{state.uses.push({item,dataUrl,options,userId:state.user?.id,projectId:state.project.id});},
     toast:text=>state.toasts.push(text),
   });
-  api.render(host);
+  api.render(host,state.renderOptions);
   t.after(async()=>{api.unmount();globalThis.FileReader=priorReader;await window.happyDOM.abort();});
   const click=async selector=>{const el=document.querySelector(selector);assert.ok(el,selector);el.click();await tick();await window.happyDOM.waitUntilComplete();await tick();return el;};
   const input=(selector,value)=>{const el=document.querySelector(selector);assert.ok(el,selector);el.value=value;el.dispatchEvent(new window.Event('input',{bubbles:true}));return el;};
@@ -314,4 +314,18 @@ test('legacy import preserves stable entity slots and copies only selected creat
  assert.doesNotMatch(f.host.querySelector('[data-image-message]').textContent,/已导入 1 张/);
  saveGate.resolve({version:1,workspace:settings.body.workspace});
  await waitFor(()=>/已导入 1 张/.test(f.host.querySelector('[data-image-message]').textContent),'workspace-backed import completion');
+});
+
+test('galleryOnly shows only the personal gallery: refresh and add-to-project, no generation form or job list', async t=>{
+  const f=fixture(t,s=>{s.renderOptions={galleryOnly:true};});await tick();
+  assert.deepEqual(f.state.calls.map(c=>c.action),['status','list']);
+  assert.equal(f.host.querySelector('[data-image-form]'),null);assert.equal(f.host.querySelector('[data-image-workflow]'),null);
+  assert.equal(f.host.querySelector('.image-compose'),null);assert.ok(f.host.querySelector('[data-image-jobs]').hidden);
+  assert.ok([...f.host.querySelectorAll('button')].some(b=>b.textContent.includes('刷新图库')));
+  assert.ok([...f.host.querySelectorAll('.image-gallery-card button')].some(b=>b.textContent.includes('加入当前项目')));
+  assert.ok(f.host.querySelector('[data-image-filter="projectId"]'));
+});
+
+test('default render still includes the generation form', async t=>{
+  const f=fixture(t);await tick();assert.ok(f.host.querySelector('[data-image-form]'));
 });
