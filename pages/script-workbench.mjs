@@ -1,5 +1,5 @@
-import {splitEpisodes} from './chatgpt-handoff.mjs?v=74aaa9591dc5';
-import {normalizeWorkshopImport,inspectScript,WORKSHOP_IMPORT_LIMITS} from './story-workshop-core.mjs?v=74aaa9591dc5';
+import {splitEpisodes} from './chatgpt-handoff.mjs?v=bd900549f538';
+import {normalizeWorkshopImport,inspectScript,WORKSHOP_IMPORT_LIMITS} from './story-workshop-core.mjs?v=bd900549f538';
 const E=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const STEPS=[['setup','作品设定'],['create','剧本创作'],['manuscript','剧本正文'],['review','剧本质检'],['shots','拆分镜头']];
 const FIELDS={premise:'故事梗概',logline:'一句话故事',tone:'整体基调',protagonistSeed:'主角与核心冲突',emotionWant:'观众情绪',outline:'故事大纲',characters:'人物小传',episodePlan:'分集规划',targetEpisodes:'目标集数'};

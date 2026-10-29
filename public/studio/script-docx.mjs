@@ -24,11 +24,11 @@ function concat(parts){
  if(size>0xffffffff)throw new Error('剧本过大，请分集导出 DOCX');
  const bytes=new Uint8Array(size);let at=0;for(const part of parts){bytes.set(part,at);at+=part.length}return bytes;
 }
-function zipStore(entries){
+export function zipStore(entries){
  const locals=[],directory=[];let offset=0;
  if(entries.length>0xffff)throw new Error('DOCX 文件数量超限');
  for(const [path,content] of entries){
-  const name=encoder.encode(path),data=encoder.encode(content),crc=crc32(data);
+  const name=encoder.encode(path),data=content instanceof Uint8Array?content:encoder.encode(content),crc=crc32(data);
   if(name.length>0xffff||data.length>0xffffffff)throw new Error('剧本过大，请分集导出 DOCX');
   const local=new Uint8Array(30),l=new DataView(local.buffer);
   l.setUint32(0,0x04034b50,true);l.setUint16(4,20,true);l.setUint16(6,0x800,true);l.setUint16(12,33,true);
