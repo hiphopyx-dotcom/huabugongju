@@ -56,6 +56,8 @@ export async function openProfile({chromium, profileDir}) {
   try {
     return await chromium.launchPersistentContext(profileDir, {
       executablePath: CHROME, headless: false, viewport: null, acceptDownloads: true,
+      // Use the real macOS keychain so Chrome can read the member's saved grok.com sign-in.
+      ignoreDefaultArgs: ['--use-mock-keychain', '--password-store=basic'],
       args: ['--profile-directory=Default', '--no-first-run', '--no-default-browser-check'],
     });
   } catch (error) {
@@ -72,14 +74,15 @@ export async function imagineOnce(context, {prompt, ratio}, {timeoutMs = 240000,
   const cookie = await visible(page.getByRole('button', {name: /Dismiss cookie notice|关闭/i}));
   if (cookie) {await cookie.click(); await humanPause(page);}
   await stopIfBlocked(page);
-  const imageMode = await visible(page.getByRole('button', {name: /^(图片|Image)$/}));
+  const imageMode = await visible(page.getByRole('radio', {name: /^(图片|Image)$/})) || await visible(page.getByRole('button', {name: /^(图片|Image)$/}));
   if (imageMode) {await imageMode.click(); await humanPause(page);}
   if (ratio) {
     const picker = await visible(page.getByRole('button', {name: /宽高比|aspect ratio/i}));
     if (!picker) throw new MemberStop('PAGE');
     await picker.click(); await humanPause(page);
-    const option = await visible(page.getByRole('menuitem', {name: ratio})) || await visible(page.getByRole('option', {name: ratio}))
-      || await visible(page.getByRole('menuitemradio', {name: ratio})) || await visible(page.getByText(ratio, {exact: true}));
+    const name = new RegExp('^\\s*' + ratio.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\s|$)');
+    const option = await visible(page.getByRole('menuitemradio', {name})) || await visible(page.getByRole('menuitem', {name}))
+      || await visible(page.getByRole('option', {name})) || await visible(page.getByText(ratio, {exact: true}));
     if (!option) throw new MemberStop('PAGE');
     await option.click(); await humanPause(page);
     await page.keyboard.press('Escape').catch(() => {});

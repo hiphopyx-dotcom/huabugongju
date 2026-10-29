@@ -10,7 +10,8 @@ import {validateConfig, validateJob, validateDataUrl, websiteRequest, pause} fro
 import {MemberStop, openProfile, imagineOnce, saveAndCompress} from './executor.mjs';
 
 export const HOME_DIR = path.join(os.homedir(), 'Library', 'Application Support', 'JubaopengGrokMember');
-export const ARCHIVE_DIR = path.join(os.homedir(), 'Pictures', '剧爆棚出图');
+// A subfolder: the image-upload watcher imports files at the top level of 剧爆棚出图, which would duplicate these.
+export const ARCHIVE_DIR = path.join(os.homedir(), 'Pictures', '剧爆棚出图', '会员出图');
 const stamp = () => new Date().toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai', hour12: false});
 
 /** Maps one attempt to the website completion body. Definite page refusals release quota; unknown ends are UNCERTAIN. */
