@@ -234,3 +234,12 @@ test('会员浏览器失败原因只接受固定代码并展示给提交人', as
  const [job]=await s.query('SELECT status,error FROM studio_image_jobs WHERE id=$1',[a.job.id]);
  assert.equal(job.status,'failed');assert.match(job.error,/人机验证/);
 });
+
+test('出图端失败原因原样显示给成员，不再统一换成联系管理员',async()=>{
+ const {FAILURE_REASONS}=await import('../lib/image-worker.mjs');
+ const pub=await import('../../public/studio/model-privacy.mjs'),pages=await import('../../pages/model-privacy.mjs');
+ for(const text of Object.values(FAILURE_REASONS)){assert.equal(pub.memberError(text),text);assert.equal(pages.memberError(text),text);}
+ assert.equal(FAILURE_REASONS.SUBMIT,'Grok 页面提交失败，请重试');
+ assert.equal(pub.memberError('Grok rate limit key=abc'),'模型服务暂不可用，请联系管理员');
+ assert.deepEqual(pub.WORKER_MESSAGES,pages.WORKER_MESSAGES);
+});

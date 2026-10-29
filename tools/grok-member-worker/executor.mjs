@@ -48,6 +48,29 @@ async function waitVisible(page, make, ms = 20000) {
   const end = Date.now() + ms;
   for (;;) {const hit = await visible(make()); if (hit || Date.now() > end) return hit; await page.waitForTimeout(500);}
 }
+/**
+ * Clicks 提交 once for the typed prompt. If the button is missing or not ready it waits for the page
+ * to settle and checks once more; it never retypes, reloads, or clicks twice. Fails with a specific stall.
+ */
+export async function submitWithRecheck({find, enabled, hasText, click, responded, settle, log = () => {}}) {
+  let detail = '';
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const btn = await find(attempt === 1 ? 10000 : 15000);
+    if (!btn) detail = '没找到提交按钮';
+    else if (!await hasText()) detail = '输入框没有内容';
+    else if (!await enabled(btn)) detail = '提交按钮不可点';
+    else {
+      await click(btn);
+      if (await responded()) return attempt;
+      // A click that may have reached Grok is never repeated (no double spend); the result is left for review.
+      log('提交未成功（点了提交无响应）');
+      const e = new MemberStop('SUBMIT', false); e.detail = '点了提交无响应'; throw e;
+    }
+    log(`提交未成功（${detail}），第 ${attempt} 次`);
+    if (attempt === 1) await settle();
+  }
+  const e = new MemberStop('SUBMIT', true); e.detail = detail; throw e;
+}
 /** grok.com/imagine offers 2:3, 3:2, 1:1, 9:16, 16:9; the workbench also offers 3:4 and 4:3. */
 export const GROK_RATIOS = ['2:3', '3:2', '1:1', '9:16', '16:9'];
 export function grokRatio(ratio) {
@@ -87,7 +110,7 @@ export async function openProfile({chromium, profileDir}) {
 
 /** Runs one prompt on grok.com/imagine and returns the original image bytes. */
 export async function imagineOnce(context, {prompt, ratio}, {timeoutMs = 240000, log = () => {}, dryRun = false} = {}) {
-  let current = '';
+  let current = '', submitted = false;
   const step = name => {current = name; log('步骤：' + name);};
   const fail = (reason = 'PAGE', definite = true) => {const e = new MemberStop(reason, definite); e.step = current; return e;};
   try {
@@ -128,11 +151,22 @@ export async function imagineOnce(context, {prompt, ratio}, {timeoutMs = 240000,
     await humanPause(page, 800, 1600);
     const before = new Set(await page.evaluate(() => [...document.images].map(i => i.currentSrc || i.src)));
     step('提交');
-    const submit = await waitVisible(page, () => page.getByRole('button', {name: SUBMIT}), 10000);
-    if (!submit) throw fail();
-    // Rehearsal: stop before submitting and clear what was typed.
-    if (dryRun) {await page.keyboard.press('Meta+A'); await page.keyboard.press('Backspace'); return {dryRun: true, step: current};}
-    await submit.click();
+    const findSubmit = () => page.getByRole('button', {name: SUBMIT}).or(page.locator('button[type="submit"]'));
+    const boxText = async () => ((await box.inputValue().catch(() => null)) ?? (await box.innerText().catch(() => ''))).trim();
+    if (dryRun) {
+      if (!await waitVisible(page, findSubmit, 10000)) throw fail();
+      // Rehearsal: stop before submitting and clear what was typed.
+      await page.keyboard.press('Meta+A'); await page.keyboard.press('Backspace'); return {dryRun: true, step: current};
+    }
+    await submitWithRecheck({
+      find: ms => waitVisible(page, findSubmit, ms),
+      enabled: btn => btn.isEnabled().catch(() => false),
+      hasText: async () => (await boxText()).length > 0,
+      click: async btn => {submitted = true; await btn.click();},
+      responded: async () => {const end = Date.now() + 8000; while (Date.now() < end) {await page.waitForTimeout(800); if (!(await boxText()).length) return true;} return false;},
+      settle: () => humanPause(page, 2500, 4000),
+      log,
+    });
     step('等图');
     const deadline = Date.now() + timeoutMs;
     let pick = null, stableSince = 0;
@@ -154,10 +188,12 @@ export async function imagineOnce(context, {prompt, ratio}, {timeoutMs = 240000,
     if (!bytes?.length) throw fail('PAGE', false);
     return {bytes, width: pick.w, height: pick.h};
   } catch (error) {
-    if (error instanceof MemberStop && !error.step) error.step = current;
-    if (error && typeof error === 'object' && !error.step) error.step = current;
-    log('卡在步骤：' + (current || '启动') + '（' + (error?.reason || error?.message || error) + '）');
-    throw error;
+    let out = error;
+    // Nothing reached Grok before the click: an unexpected page error is a definite failure, so the quota is refunded.
+    if (!(out instanceof MemberStop) && !submitted) {out = new MemberStop('PAGE', true); out.detail = String(error?.message || error).slice(0, 200);}
+    if (out && typeof out === 'object' && !out.step) out.step = current;
+    log('卡在步骤：' + (current || '启动') + '（' + (out?.reason || out?.message || out) + (out?.detail ? '：' + out.detail : '') + '）');
+    throw out;
   }
 }
 

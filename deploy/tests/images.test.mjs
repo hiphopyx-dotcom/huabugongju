@@ -109,3 +109,15 @@ test('运行中的任务始终需要核对，旧的未解决任务不被最近30
   status=await (await request(s.handler,'status')).json();assert.equal(status.jobs.length,31);assert.equal(status.jobs.find(j=>j.id===old.job.id).needsReview,true);
  }finally{await s.db.close()}
 });
+
+test('连接未建立（请求未发出）直接失败并退还额度，请求发出后的断开仍待核对',async()=>{
+ const errors=[Object.assign(new TypeError('fetch failed'),{cause:Object.assign(new Error('connect'),{code:'ECONNREFUSED'})}),Object.assign(new TypeError('fetch failed'),{cause:Object.assign(new Error('connect timeout'),{code:'UND_ERR_CONNECT_TIMEOUT'})}),Object.assign(new TypeError('fetch failed'),{cause:Object.assign(new Error('socket'),{code:'ECONNRESET'})})];let calls=0;
+ const s=await setup({fetcher:async()=>{throw errors[calls++]}});
+ try{
+  const expect=['failed','failed','uncertain'];
+  for(let i=0;i<errors.length;i++){
+   const result=await (await request(s.handler,'generate',{requestId:`81d885b0-13c0-43ef-b17f-47c72863265${i}`,kind:'道具',prompt:'一把钥匙'})).json();
+   assert.equal(result.job.status,expect[i]);assert.equal(result.wallet.used,0);assert.equal(result.wallet.held,i===2?2000:0);
+  }
+ }finally{await s.db.close()}
+});

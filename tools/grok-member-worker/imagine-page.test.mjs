@@ -27,3 +27,31 @@ test('steps are fixed and a failure records the step it stopped at', async () =>
   assert.equal(stats.step, '选宽高比');
   assert.ok(lines.some(l => l.includes('卡在步骤：选宽高比')), lines.join('\n'));
 });
+
+import {submitWithRecheck} from './executor.mjs';
+const fake = (over = {}) => {const lines = [], clicks = []; return {lines, clicks, args: {find: async () => ({}), enabled: async () => true, hasText: async () => true, click: async b => clicks.push(b), responded: async () => true, settle: async () => {}, log: l => lines.push(l), ...over}};};
+test('submit: a missing or disabled button is rechecked once after the page settles, then clicked once', async () => {
+  let n = 0; const f = fake({find: async () => (n++ ? {} : null)});
+  assert.equal(await submitWithRecheck(f.args), 2);
+  assert.equal(f.clicks.length, 1);
+  assert.ok(f.lines[0].includes('没找到提交按钮'));
+  let m = 0; const g = fake({enabled: async () => m++ > 0});
+  assert.equal(await submitWithRecheck(g.args), 2); assert.equal(g.clicks.length, 1);
+});
+test('submit: still not ready after the recheck is a definite SUBMIT failure naming the stall', async () => {
+  const f = fake({enabled: async () => false});
+  await assert.rejects(submitWithRecheck(f.args), e => e.reason === 'SUBMIT' && e.definite && e.detail === '提交按钮不可点');
+  assert.equal(f.clicks.length, 0);
+  const g = fake({hasText: async () => false});
+  await assert.rejects(submitWithRecheck(g.args), e => e.detail === '输入框没有内容');
+});
+test('submit: a click with no response is never repeated and stays uncertain', async () => {
+  const f = fake({responded: async () => false});
+  await assert.rejects(submitWithRecheck(f.args), e => e.reason === 'SUBMIT' && !e.definite && e.detail === '点了提交无响应');
+  assert.equal(f.clicks.length, 1);
+});
+test('a browser that never opened is a definite failure (refunded), not uncertain', async () => {
+  const {result, stats} = await processJob({id: 'x', references: [], prompt: 'p', ratio: '1:1'}, {open: async () => {throw new Error('launch failed');}, log: () => {}});
+  assert.deepEqual(result, {error: 'REJECTED', reason: 'PAGE'});
+  assert.equal(stats.step, '启动');
+});

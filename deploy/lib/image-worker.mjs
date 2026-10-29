@@ -12,7 +12,8 @@ export const FAILURE_REASONS=Object.freeze({
  TIMEOUT:'Grok 页面超时未出图，未重复提交；请稍后重试',
  ACCOUNT:'Mac 上登录的 Grok 账号与配置不一致，已停止出图',
  BUSY:'Mac 上该 Grok 浏览器窗口正被占用，请关闭后再出图',
- PAGE:'Grok 页面结构异常，未能完成出图；请联系管理员',
+ SUBMIT:'Grok 页面提交失败，请重试',
+ PAGE:'Grok 页面异常，未能完成出图，请重试；多次失败请联系管理员',
 });
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CREDENTIAL=/^[A-Za-z0-9_-]{43}$/;

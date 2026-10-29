@@ -94,12 +94,18 @@ function sniffData(b64){
  const b=Buffer.from(b64.slice(0,64),'base64');const mime=b.subarray(0,8).toString('hex')==='89504e470d0a1a0a'?'image/png':b[0]===255&&b[1]===216?'image/jpeg':b.toString('ascii',0,4)==='RIFF'?'image/webp':'';
  if(!mime)throw new Error('invalid-result');return `data:${mime};base64,${b64}`;
 }
+// The connection never opened, so the request was never sent: safe to fail and refund. A timeout or
+// reset after the request was sent stays uncertain to avoid charging twice.
+const CONNECT_CODES=new Set(['ECONNREFUSED','ENOTFOUND','EAI_AGAIN','ETIMEDOUT','EHOSTUNREACH','ENETUNREACH','UND_ERR_CONNECT_TIMEOUT']);
+export function connectFailed(error){for(let e=error,i=0;e&&i<4;e=e.cause,i++)if(CONNECT_CODES.has(e.code))return true;return false;}
 async function remoteGenerate(config,input){
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),110000);
  try{
   const refs=input.references,payload={model:config.model,prompt:input.prompt,n:1,aspect_ratio:input.ratio,resolution:input.resolution,response_format:'b64_json'};
   if(refs.length===1)payload.image={type:'image_url',url:refs[0]};else if(refs.length)payload.images=refs.map(url=>({type:'image_url',url}));
-  const response=await (config.fetcher||fetch)(config.baseUrl+(refs.length?'/images/edits':'/images/generations'),{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+config.key},body:JSON.stringify(payload),signal:controller.signal,redirect:'error'});
+  let response;
+  try{response=await (config.fetcher||fetch)(config.baseUrl+(refs.length?'/images/edits':'/images/generations'),{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+config.key},body:JSON.stringify(payload),signal:controller.signal,redirect:'error'});}
+  catch(error){if(connectFailed(error))throw Object.assign(new Error('connect-failed'),{definite:true});throw error;}
   // A definite HTTP rejection did not produce a usable image. Ambiguous transport,
   // server failures and malformed success responses retain the reservation.
   if(!response.ok){await response.body?.cancel();throw Object.assign(new Error('request-rejected'),{definite:response.status>=400&&response.status<500&&response.status!==408})}

@@ -24,14 +24,15 @@ export async function processJob(job, {chromium, profileDir, archiveDir = ARCHIV
   if (job.references.length) return {result: {error: 'REJECTED', reason: 'PAGE'}};
   const started = Date.now(); let context;
   try {
-    context = await open({chromium, profileDir});
+    try {context = await open({chromium, profileDir});}
+    catch (error) {if (error instanceof MemberStop) throw error; const e = new MemberStop('PAGE', true); e.step = '启动'; e.detail = '浏览器未能打开'; throw e;}
     const image = await imagine(context, job, {log: line => log(`[${stamp()}] ${line}`)});
     const saved = await compress(image.bytes, {id: job.id, archiveDir});
     const dataUrl = validateDataUrl(`data:${saved.mime};base64,${saved.bytes.toString('base64')}`);
     return {result: {dataUrl}, stats: {ms: Date.now() - started, before: saved.before, after: saved.after, file: saved.original}};
   } catch (error) {
-    log(`[${stamp()}] 任务失败：${error instanceof MemberStop ? error.reason : '页面异常'}${error?.step ? '，卡在步骤：' + error.step : ''}`);
-    return {result: completionFor(error), stats: {ms: Date.now() - started, ...(error?.step ? {step: error.step} : {})}};
+    log(`[${stamp()}] 任务失败：${error instanceof MemberStop ? error.reason : '页面异常'}${error?.detail ? '（' + error.detail + '）' : ''}${error?.step ? '，卡在步骤：' + error.step : ''}`);
+    return {result: completionFor(error), stats: {ms: Date.now() - started, ...(error?.step ? {step: error.step} : {}), ...(error?.detail ? {detail: error.detail} : {})}};
   } finally {await context?.close().catch(() => {});}
 }
 
