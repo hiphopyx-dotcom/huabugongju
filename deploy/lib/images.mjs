@@ -1,6 +1,7 @@
 import {randomUUID as uuid} from 'node:crypto';
 import {AccountError,cookie,hash,safeOrigin} from './security.mjs';
 import {createQuotaService} from './quota.mjs';
+import {createImageWorkerService} from './image-worker.mjs';
 
 export const IMAGE_LIMITS=Object.freeze({imageBytes:3*1024*1024,referenceBytes:768*1024,referenceLimit:3,requestBytes:4*1024*1024+65536,maxPixels:40000000});
 const KINDS=['角色','场景','道具','分镜'],RATIOS=['9:16','16:9','1:1','4:3','3:4'],RESOLUTIONS=['1k','2k'];
@@ -43,10 +44,14 @@ const emptyWorkspace=()=>({entities:[],style:'',portraitStyle:''});
 function base(value){try{const u=new URL(value);if(u.protocol!=='https:'||u.username||u.password||u.search||u.hash||/^(localhost|127\.|0\.|10\.|192\.168\.|169\.254\.|\[)/i.test(u.hostname)||/^172\.(1[6-9]|2[0-9]|3[01])\./.test(u.hostname))return '';return u.href.replace(/\/+$/,'')}catch{return ''}}
 /** Environment routing stays server-side. A generic key requires its explicit base. */
 export function imageServerConfig(env={}){
+ if(env.JBP_IMAGE_EXECUTION==='mac')return {execution:'mac',key:'',baseUrl:'',model:''};
  const dedicated=typeof env.XAI_API_KEY==='string'?env.XAI_API_KEY.trim():'';
  if(dedicated)return {key:dedicated,baseUrl:'https://api.x.ai/v1',model:env.XAI_IMAGE_MODEL||env.AI_IMAGE_MODEL||'grok-imagine-image-2.0'};
  const generic=typeof env.AI_API_KEY==='string'?env.AI_API_KEY.trim():'';
- return {key:generic&&base(env.AI_BASE_URL)?generic:'',baseUrl:base(env.AI_BASE_URL),model:env.AI_IMAGE_MODEL||'grok-imagine-image-2.0'};
+ const remote={key:generic&&base(env.AI_BASE_URL)?generic:'',baseUrl:base(env.AI_BASE_URL),model:env.AI_IMAGE_MODEL||'grok-imagine-image-2.0'};
+ // No server-side model key: dispatch to the Mac worker (member grok.com session) instead.
+ if(!remote.key&&env.JBP_IMAGE_EXECUTION!=='direct')return {execution:'mac',key:'',baseUrl:'',model:''};
+ return remote;
 }
 function dimensions(b,mime){
  if(mime==='image/png'){
@@ -106,7 +111,8 @@ async function remoteGenerate(config,input){
 }
 function dto(i){return {id:i.id,projectId:i.project_id,name:i.name,kind:i.asset_kind,ratio:i.ratio,resolution:i.resolution,width:Number(i.width),height:Number(i.height),prompt:i.prompt,created:Number(i.created),contentUrl:`/api/images?action=content&id=${encodeURIComponent(i.id)}`,adminLocked:!!i.admin_locked,source:i.source,metadata:metadataDto(i.metadata)}}
 function jobDto(j){
- const reviewed=j.quota_state==='charged'||j.quota_state==='released',needsReview=j.status==='running'||(j.status==='uncertain'&&!reviewed);
+ if(j.status==='running'&&j.dispatch_state==='queued')j={...j,status:'queued'};
+ const reviewed=j.quota_state==='charged'||j.quota_state==='released',needsReview=['queued','running'].includes(j.status)||(j.status==='uncertain'&&!reviewed);
  return {id:j.id,requestId:j.request_key,status:j.status,needsReview,error:j.status==='uncertain'&&reviewed?'管理员已核对额度，生成结果仍待确认':j.error||'',created:Number(j.created),metadata:metadataDto(j.metadata),...(j.item_id?{itemId:j.item_id}:{})};
 }
 function payload(body,action){
@@ -131,25 +137,36 @@ export function createImageHandler(query,config={}){
  const provider={...config,key:typeof config.key==='string'?config.key.trim():'',baseUrl:base(config.baseUrl||'https://api.x.ai/v1'),model:typeof config.model==='string'&&config.model?config.model:'grok-imagine-image-2.0'};
  const configured=!!provider.key&&!!provider.baseUrl;
  const now=()=>config.now?.()??Date.now(),id=()=>config.randomUUID?.()??uuid();
+ // The Mac member worker takes over whenever an administrator has configured it.
+ const worker=createImageWorkerService(query,{now,randomUUID:id}),useMac=async()=>config.execution==='mac'||(await worker.status()).configured;
  const image=async(owner,imageId,withData=false)=>one((withData?IMAGE_DATA:ACTIVE_IMAGE)+' WHERE i.owner=$1 AND i.id=$2 AND a.admin_deleted=false AND i.member_deleted=false',owner,imageId);
  const jobs=async(owner)=>{
-  await q("UPDATE studio_image_jobs SET status='uncertain',error='生成结果待核对，未重复调用；请联系管理员核对任务与额度',updated=$2 WHERE owner=$1 AND status='running' AND created<$3",owner,now(),now()-180000);
+  if(worker)await worker.cleanup(owner);
+  await q("UPDATE studio_image_jobs SET status='uncertain',error='生成结果待核对，未重复调用；请联系管理员核对任务与额度',updated=$2 WHERE owner=$1 AND status='running' AND created<$3 AND NOT EXISTS (SELECT 1 FROM studio_image_dispatch d WHERE d.job_id=studio_image_jobs.id)",owner,now(),now()-180000);
   // Include every unresolved job, even when it predates the recent-history window.
-  return (await q("SELECT j.id,j.request_key,j.status,j.error,j.created,j.item_id,j.metadata,e.state AS quota_state FROM studio_image_jobs j LEFT JOIN studio_quota_entries e ON e.owner=j.owner AND e.request_key='media:image:'||j.request_key WHERE j.owner=$1 AND (j.status='running' OR (j.status='uncertain' AND (e.state IS NULL OR e.state='reserved')) OR j.id IN (SELECT id FROM studio_image_jobs WHERE owner=$1 ORDER BY created DESC,id DESC LIMIT 30)) ORDER BY j.created DESC,j.id DESC",owner)).map(jobDto);
+  return (await q("SELECT j.id,j.request_key,j.status,j.error,j.created,j.item_id,j.metadata,e.state AS quota_state,d.state AS dispatch_state FROM studio_image_jobs j LEFT JOIN studio_image_dispatch d ON d.job_id=j.id LEFT JOIN studio_quota_entries e ON e.owner=j.owner AND e.request_key='media:image:'||j.request_key WHERE j.owner=$1 AND (j.status='running' OR (j.status='uncertain' AND (e.state IS NULL OR e.state='reserved')) OR j.id IN (SELECT id FROM studio_image_jobs WHERE owner=$1 ORDER BY created DESC,id DESC LIMIT 30)) ORDER BY j.created DESC,j.id DESC",owner)).map(jobDto);
  };
  const publicJob=async(owner,job)=>{
+  if(worker&&!Object.hasOwn(job,'dispatch_state'))job=await worker.decorate(job);
   if(job.status!=='uncertain')return jobDto(job);
   try{const entry=await one('SELECT state FROM studio_quota_entries WHERE owner=$1 AND request_key=$2',owner,'media:image:'+job.request_key);return jobDto({...job,quota_state:entry?.state})}catch{return jobDto(job)}
  };
  return async req=>{
   try{
    safeOrigin(req);const currentTime=now(),url=new URL(req.url),action=url.searchParams.get('action')||'status';
-   const allowed=['list','history'].includes(action)?['action','page','pageSize','projectId','kind','entityId','slot','episode','q']:action==='slots'?['action','projectId','entityId']:action==='workspace'&&req.method==='GET'?['action','projectId']:action==='content'?['action','id','download']:['action'];if([...url.searchParams.keys()].some(k=>!allowed.includes(k)))fail('请求字段无效');
+   const allowed=['list','history'].includes(action)?['action','page','pageSize','projectId','kind','entityId','slot','episode','q']:action==='slots'?['action','projectId','entityId']:action==='workspace'&&req.method==='GET'?['action','projectId']:action==='job'?['action','id']:action==='content'?['action','id','download']:['action'];if([...url.searchParams.keys()].some(k=>!allowed.includes(k)))fail('请求字段无效');
    if(!['GET','POST'].includes(req.method))fail('请求方式无效',405);
    const raw=cookie(req),sessionHash=raw?hash(raw):'',user=raw?await one('SELECT a.* FROM studio_sessions s JOIN studio_accounts a ON a.id=s.user_id WHERE s.token_hash=$1 AND s.expires>$2 AND a.active=true AND s.version=a.session_version',sessionHash,currentTime):null;
    if(!user)fail('请先登录',401);
    if(req.method==='GET'){
-    if(action==='status')return json({configured,capabilities:{kinds:KINDS,ratios:RATIOS,resolutions:RESOLUTIONS,...IMAGE_LIMITS},wallet:await quota.summary(user.id),rates:await quota.rates(),jobs:await jobs(user.id)});
+    if(action==='status')return json({...(await useMac()?await worker.status():{configured}),capabilities:{kinds:KINDS,ratios:RATIOS,resolutions:RESOLUTIONS,...IMAGE_LIMITS},wallet:await quota.summary(user.id),rates:await quota.rates(),jobs:await jobs(user.id)});
+    if(action==='job'){
+     const jobId=url.searchParams.get('id')||'';if(!UUID.test(jobId))fail('任务标识无效');
+     await jobs(user.id);
+     const job=await one('SELECT * FROM studio_image_jobs WHERE id=$1 AND owner=$2',jobId,user.id);if(!job)fail('任务不存在',404);
+     const current=job.item_id?await image(user.id,job.item_id):null;
+     return json({job:await publicJob(user.id,job),...(current?{item:dto(current)}:{})});
+    }
     if(action==='workspace'){
      const projectId=identifier(url.searchParams.get('projectId'),'项目标识'),saved=await one('SELECT workspace,version FROM studio_image_workspaces WHERE owner=$1 AND project_id=$2',user.id,projectId);
      return json(saved?{workspace:saved.workspace,version:Number(saved.version)}:{workspace:emptyWorkspace(),version:0});
@@ -203,6 +220,12 @@ export function createImageHandler(query,config={}){
      if(typeof ref.id!=='string'||!UUID.test(ref.id))fail('参考图片标识无效');const saved=await image(user.id,ref.id,true);if(!saved)fail('参考图片不存在或无权访问',404);references.push(validateImageData(saved.data_url).dataUrl);referenceIds.push(ref.id);
     }else references.push(validateImageData(ref.dataUrl,IMAGE_LIMITS.referenceBytes).dataUrl)}
    const inputHash=hash(JSON.stringify({...data,references:references.map(hash)}));
+   if(await useMac()){
+    const state=await worker.status();if(!state.configured||!state.online)fail('模型服务暂未连接，请联系管理员',409);
+    const rates=await quota.rates(),start=await worker.submit({user,sessionHash,data,inputHash,amount:rates.image,references,referenceIds,origin:url.origin});
+    const current=start.job.item_id?await image(user.id,start.job.item_id):null;
+    return json({job:await publicJob(user.id,start.job),...(current?{item:dto(current)}:{}),wallet:await quota.summary(user.id)},start.started?202:200);
+   }
    if(!configured)fail('图片生成尚未配置，请联系管理员',409);
    const rates=await quota.rates(),start=await one('SELECT studio_image_begin($1,$2,$3,$4::jsonb,$5,$6) AS result',user.id,sessionHash,user.session_version,JSON.stringify({...data,references:undefined,id:id(),inputHash}),rates.image,now());
    let job=start.result.job;

@@ -1,6 +1,6 @@
 // Pure creative workflow helpers. No network, account, billing, or generation side effects.
-import {IMAGE_WORKSHOP_CATEGORIES, buildImageWorkshopPrompt} from './image-workshop-core.mjs?v=8fa2621783fe';
-import * as SB from './storyboard.mjs?v=8fa2621783fe';
+import {IMAGE_WORKSHOP_CATEGORIES, buildImageWorkshopPrompt} from './image-workshop-core.mjs?v=b7e1c04a9d23';
+import * as SB from './storyboard.mjs?v=b7e1c04a9d23';
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const freeze = value => { if (value && typeof value === 'object') {Object.values(value).forEach(freeze); Object.freeze(value);} return value; };

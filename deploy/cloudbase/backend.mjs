@@ -6,8 +6,8 @@ export const BODY_LIMITS = Object.freeze({image: 4 * 1024 * 1024 + 65536, other:
 
 export async function createBackend({query, publicOrigin, libraryRoot = new URL('../lib/', import.meta.url), env = process.env, onImageConfiguration = () => {}}) {
   if (new URL(publicOrigin).origin !== publicOrigin || !publicOrigin.startsWith('https://')) throw Error('Exact HTTPS origin required');
-  const [accounts, generation, assets, collaboration, sso, reference, images, quota] = await Promise.all(
-    ['accounts', 'generation', 'assets', 'collaboration', 'sso', 'reference', 'images', 'quota'].map(name => import(new URL(name + '.mjs', libraryRoot)))
+  const [accounts, generation, assets, collaboration, sso, reference, images, quota, imageWorker] = await Promise.all(
+    ['accounts', 'generation', 'assets', 'collaboration', 'sso', 'reference', 'images', 'quota', 'image-worker'].map(name => import(new URL(name + '.mjs', libraryRoot)))
   );
   const imageConfiguration = images.imageServerConfig(env);
   onImageConfiguration(imageConfiguration);
@@ -19,6 +19,7 @@ export async function createBackend({query, publicOrigin, libraryRoot = new URL(
     ['/api/sso', [new Set(['POST']), sso.createSsoHandler(query)]],
     ['/api/reference', [new Set(['GET']), reference.reference]],
     ['/api/images', [new Set(['GET', 'POST']), images.createImageHandler(query, imageConfiguration)]],
+    ['/api/image-worker', [new Set(['GET', 'POST']), imageWorker.createImageWorkerHandler(query, {publicOrigin})]],
     ['/api/quota', [new Set(['GET', 'POST']), quota.createQuotaHandler(query)]],
   ]);
   return async request => {
@@ -27,15 +28,18 @@ export async function createBackend({query, publicOrigin, libraryRoot = new URL(
     if (!route[0].has(request.method)) return failure(405, '请求方式不支持');
     const origin = request.headers.get('origin');
     const serverRedeem = url.pathname === '/api/sso' && url.searchParams.get('action') === 'redeem' && !origin;
+    const serverImageWorker = url.pathname === '/api/image-worker' && ['poll','heartbeat','complete'].includes(url.searchParams.get('action')) && !origin;
     if (url.origin !== publicOrigin || (origin && origin !== publicOrigin)
-      || (request.method !== 'GET' && !origin && !serverRedeem)
+      || (request.method !== 'GET' && !origin && !serverRedeem && !serverImageWorker)
+      || (serverImageWorker && [...request.headers.keys()].some(key=>key.startsWith('sec-fetch-')))
       || request.headers.get('sec-fetch-site') === 'cross-site') return failure(403, '请在当前网站内操作');
     // Worker authentication remains on the existing trusted entry, not this site.
     if (url.pathname === '/api/generation' && ['poll', 'heartbeat', 'complete'].includes(url.searchParams.get('action'))) return failure(404, '接口不存在');
     const headers = new Headers();
     for (const key of ['cookie', 'origin', 'content-type']) if (request.headers.has(key)) headers.set(key, request.headers.get(key));
+    if(serverImageWorker&&request.headers.has('authorization'))headers.set('authorization',request.headers.get('authorization'));
     let body;
-    try { body = request.method === 'GET' ? undefined : await limitedBytes(request.body, url.pathname === '/api/images' ? BODY_LIMITS.image : BODY_LIMITS.other); }
+    try { body = request.method === 'GET' ? undefined : await limitedBytes(request.body, ['/api/images','/api/image-worker'].includes(url.pathname) ? BODY_LIMITS.image : BODY_LIMITS.other); }
     catch { return failure(413, '请求过大'); }
     const response = await route[1](new Request(request.url, {method: request.method, headers, body}));
     response.headers.set('Cache-Control', 'no-store');

@@ -1,4 +1,4 @@
-import {publicData} from './model-privacy.mjs?v=8fa2621783fe';
+import {publicData} from './model-privacy.mjs?v=b7e1c04a9d23';
 const clone=v=>v===undefined?undefined:structuredClone(v);
 const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 const object=v=>v&&typeof v==='object'&&!Array.isArray(v);

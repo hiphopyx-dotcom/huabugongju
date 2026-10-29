@@ -1,6 +1,6 @@
-import * as C from './core.mjs?v=8fa2621783fe';
-import {groups} from './storyboard.mjs?v=8fa2621783fe';
-import {breakScript} from './pianchang-parse.mjs?v=8fa2621783fe';
+import * as C from './core.mjs?v=b7e1c04a9d23';
+import {groups} from './storyboard.mjs?v=b7e1c04a9d23';
+import {breakScript} from './pianchang-parse.mjs?v=b7e1c04a9d23';
 
 const MAX_TEXT=300000,MAX_XML=6000000;
 export const escape=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
