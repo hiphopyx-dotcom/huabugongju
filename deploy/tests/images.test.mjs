@@ -16,10 +16,11 @@ async function setup(config={}){
 }
 
 test('图片配置只接受专用密钥或显式通用base，不从通用密钥猜路由',()=>{
- assert.equal(imageServerConfig({AI_API_KEY:'generic-secret'}).key,'');
- assert.equal(imageServerConfig({AI_API_KEY:'generic-secret',AI_BASE_URL:'http://localhost:8000/v1'}).key,'');
- assert.equal(imageServerConfig({AI_API_KEY:'generic-secret',AI_BASE_URL:'https://gateway.example/v1',AI_IMAGE_MODEL:'private-model'}).baseUrl,'https://gateway.example/v1');
- const dedicated=imageServerConfig({AI_API_KEY:'generic-secret',AI_BASE_URL:'https://gateway.example/v1',XAI_API_KEY:'dedicated-secret',XAI_IMAGE_MODEL:'chosen'});
+ assert.deepEqual(imageServerConfig({XAI_API_KEY:'live-key'}),{execution:'mac',key:'',baseUrl:'',model:''});
+ assert.equal(imageServerConfig({JBP_IMAGE_EXECUTION:'direct',AI_API_KEY:'generic-secret'}).key,'');
+ assert.equal(imageServerConfig({JBP_IMAGE_EXECUTION:'direct',AI_API_KEY:'generic-secret',AI_BASE_URL:'http://localhost:8000/v1'}).key,'');
+ assert.equal(imageServerConfig({JBP_IMAGE_EXECUTION:'direct',AI_API_KEY:'generic-secret',AI_BASE_URL:'https://gateway.example/v1',AI_IMAGE_MODEL:'private-model'}).baseUrl,'https://gateway.example/v1');
+ const dedicated=imageServerConfig({JBP_IMAGE_EXECUTION:'direct',AI_API_KEY:'generic-secret',AI_BASE_URL:'https://gateway.example/v1',XAI_API_KEY:'dedicated-secret',XAI_IMAGE_MODEL:'chosen'});
  assert.equal(dedicated.key,'dedicated-secret');assert.equal(dedicated.baseUrl,'https://api.x.ai/v1');assert.equal(dedicated.model,'chosen');
 });
 

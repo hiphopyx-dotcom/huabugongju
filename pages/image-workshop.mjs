@@ -1,12 +1,12 @@
-import {IMAGE_WORKSHOP_CATEGORIES,readImageWorkshopArchive,selectImageWorkshopImport,buildImageWorkshopPrompt} from './image-workshop-core.mjs?v=b7e1c04a9d23';
-import {memberError} from './model-privacy.mjs?v=b7e1c04a9d23';
-import {resetQuota} from './quota.mjs?v=b7e1c04a9d23';
-import {createImageWorkbench} from './image-workbench.mjs?v=b7e1c04a9d23';
-import * as SB from './storyboard.mjs?v=b7e1c04a9d23';
+import {IMAGE_WORKSHOP_CATEGORIES,readImageWorkshopArchive,selectImageWorkshopImport,buildImageWorkshopPrompt} from './image-workshop-core.mjs?v=c3a9f05e71d4';
+import {memberError} from './model-privacy.mjs?v=c3a9f05e71d4';
+import {resetQuota} from './quota.mjs?v=c3a9f05e71d4';
+import {createImageWorkbench} from './image-workbench.mjs?v=c3a9f05e71d4';
+import * as SB from './storyboard.mjs?v=c3a9f05e71d4';
 
 const E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const N=v=>v==null?'不限额':Number(v).toLocaleString('zh-CN');
-const labels={queued:'排队中（等待 Mac 出图）',running:'生成中',done:'已完成',failed:'生成失败',uncertain:'结果待核对'};
+const labels={queued:'等待 Mac 执行器',running:'生成中',done:'已完成',failed:'生成失败',uncertain:'结果待核对'};
 const kinds=['角色','场景','道具','分镜'];
 const ratios=['16:9','9:16','1:1','3:4','4:3'];
 const action=(label,key,attrs='',cls='')=>`<button type="button" data-image-action="${key}" ${attrs} class="${cls}">${label}</button>`;

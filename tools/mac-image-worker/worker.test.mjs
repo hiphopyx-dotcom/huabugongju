@@ -90,8 +90,10 @@ test('an injected filesystem failure prevents the first provider POST and saniti
 });
 test('startup recovers before metadata check, then refuses new jobs if metadata is unavailable',async t=>{
   const d=await directory(t),file=path.join(d,'connection.json');await fs.writeFile(file,JSON.stringify(config));const store=await createReceiptStore(path.join(d,'receipts'));await store.write({...intent,state:'result',result:{dataUrl:image}});const events=[];
-  await assert.rejects(()=>startWorker(file,{apiKey:SECRET,logger:()=>{},fetcher:async url=>{events.push('upload');assert.ok(url.endsWith('action=complete'));return json({saved:true,status:'done'});},providerFetcher:async()=>{events.push('metadata');return json({},403);}}),/HTTP 403/);assert.deepEqual(events,['upload','metadata']);assert.equal((await store.read(id)).state,'acknowledged');await assert.rejects(()=>fs.stat(path.join(d,'worker.lock')),{code:'ENOENT'});
+  await assert.rejects(()=>startWorker(file,{allowPaidApi:true,apiKey:SECRET,logger:()=>{},fetcher:async url=>{events.push('upload');assert.ok(url.endsWith('action=complete'));return json({saved:true,status:'done'});},providerFetcher:async()=>{events.push('metadata');return json({},403);}}),/HTTP 403/);assert.deepEqual(events,['upload','metadata']);assert.equal((await store.read(id)).state,'acknowledged');await assert.rejects(()=>fs.stat(path.join(d,'worker.lock')),{code:'ENOENT'});
 });
 test('a running worker lock prevents a second process from contacting any service',async t=>{
-  const d=await directory(t),file=path.join(d,'connection.json');await fs.writeFile(file,JSON.stringify(config));await fs.writeFile(path.join(d,'worker.lock'),'123');let count=0;await assert.rejects(()=>startWorker(file,{apiKey:SECRET,fetcher:async()=>count++,providerFetcher:async()=>count++}),/已运行/);assert.equal(count,0);
+  const d=await directory(t),file=path.join(d,'connection.json');await fs.writeFile(file,JSON.stringify(config));await fs.writeFile(path.join(d,'worker.lock'),'123');let count=0;await assert.rejects(()=>startWorker(file,{allowPaidApi:true,apiKey:SECRET,fetcher:async()=>count++,providerFetcher:async()=>count++}),/已运行/);assert.equal(count,0);
 });
+
+test('paid xAI worker refuses to start unless explicitly allowed',async()=>{await assert.rejects(()=>startWorker('/nonexistent/connection.json',{allowPaidApi:false}),/付费 xAI 图片接口已停用/);});

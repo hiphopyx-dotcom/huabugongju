@@ -1,9 +1,9 @@
 // 片场工作台：导入剧本 → 拆解 → 人物三视图/八表情 → 场景五向 → 道具主图 → 连续分镜。
 // 选项与片场同一套：画幅、分辨率、出图风格、镜头语言、过肩正反打。
-import {breakScript} from './pianchang-parse.mjs?v=b7e1c04a9d23';
-import {readScript} from './script-breakdown.mjs?v=b7e1c04a9d23';
-import {LOOK_STYLES} from './image-workflow.mjs?v=b7e1c04a9d23';
-import * as L from './shot-language.mjs?v=b7e1c04a9d23';
+import {breakScript} from './pianchang-parse.mjs?v=c3a9f05e71d4';
+import {readScript} from './script-breakdown.mjs?v=c3a9f05e71d4';
+import {LOOK_STYLES} from './image-workflow.mjs?v=c3a9f05e71d4';
+import * as L from './shot-language.mjs?v=c3a9f05e71d4';
 
 const E = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&','<':'<','>':'>','"':'"',"'":'&#39;'}[c]));
 const ASPECTS = [{id:'1:1',label:'1:1'},{id:'3:4',label:'3:4'},{id:'16:9',label:'16:9'},{id:'9:16',label:'9:16'}];

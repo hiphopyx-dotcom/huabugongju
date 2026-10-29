@@ -44,14 +44,13 @@ const emptyWorkspace=()=>({entities:[],style:'',portraitStyle:''});
 function base(value){try{const u=new URL(value);if(u.protocol!=='https:'||u.username||u.password||u.search||u.hash||/^(localhost|127\.|0\.|10\.|192\.168\.|169\.254\.|\[)/i.test(u.hostname)||/^172\.(1[6-9]|2[0-9]|3[01])\./.test(u.hostname))return '';return u.href.replace(/\/+$/,'')}catch{return ''}}
 /** Environment routing stays server-side. A generic key requires its explicit base. */
 export function imageServerConfig(env={}){
- if(env.JBP_IMAGE_EXECUTION==='mac')return {execution:'mac',key:'',baseUrl:'',model:''};
+ // The paid xAI image API is off by default: every job queues for the Mac member worker.
+ // Only an explicit JBP_IMAGE_EXECUTION=direct re-enables the API path.
+ if(env.JBP_IMAGE_EXECUTION!=='direct')return {execution:'mac',key:'',baseUrl:'',model:''};
  const dedicated=typeof env.XAI_API_KEY==='string'?env.XAI_API_KEY.trim():'';
  if(dedicated)return {key:dedicated,baseUrl:'https://api.x.ai/v1',model:env.XAI_IMAGE_MODEL||env.AI_IMAGE_MODEL||'grok-imagine-image-2.0'};
  const generic=typeof env.AI_API_KEY==='string'?env.AI_API_KEY.trim():'';
- const remote={key:generic&&base(env.AI_BASE_URL)?generic:'',baseUrl:base(env.AI_BASE_URL),model:env.AI_IMAGE_MODEL||'grok-imagine-image-2.0'};
- // No server-side model key: dispatch to the Mac worker (member grok.com session) instead.
- if(!remote.key&&env.JBP_IMAGE_EXECUTION!=='direct')return {execution:'mac',key:'',baseUrl:'',model:''};
- return remote;
+ return {key:generic&&base(env.AI_BASE_URL)?generic:'',baseUrl:base(env.AI_BASE_URL),model:env.AI_IMAGE_MODEL||'grok-imagine-image-2.0'};
 }
 function dimensions(b,mime){
  if(mime==='image/png'){
@@ -221,7 +220,7 @@ export function createImageHandler(query,config={}){
     }else references.push(validateImageData(ref.dataUrl,IMAGE_LIMITS.referenceBytes).dataUrl)}
    const inputHash=hash(JSON.stringify({...data,references:references.map(hash)}));
    if(await useMac()){
-    const state=await worker.status();if(!state.configured||!state.online)fail('模型服务暂未连接，请联系管理员',409);
+    const state=await worker.status();if(!state.configured)fail('等待 Mac 执行器：管理员尚未配置出图端',409);
     const rates=await quota.rates(),start=await worker.submit({user,sessionHash,data,inputHash,amount:rates.image,references,referenceIds,origin:url.origin});
     const current=start.job.item_id?await image(user.id,start.job.item_id):null;
     return json({job:await publicJob(user.id,start.job),...(current?{item:dto(current)}:{}),wallet:await quota.summary(user.id)},start.started?202:200);

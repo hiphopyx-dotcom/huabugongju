@@ -166,7 +166,9 @@ export function createJobProcessor({store,configuration,apiKey,fetcher=nativeWeb
     },
   };
 }
-export async function startWorker(configFile,{signal,apiKey=process.env.XAI_API_KEY,fetcher=nativeWebsiteFetch,providerFetcher=fetch,logger=console.log,pollMs=2500}={}) {
+export async function startWorker(configFile,{signal,apiKey=process.env.XAI_API_KEY,fetcher=nativeWebsiteFetch,providerFetcher=fetch,logger=console.log,pollMs=2500,allowPaidApi=process.env.JBP_ALLOW_XAI_API==='1'}={}) {
+  // This worker calls the paid xAI image API; it stays off unless explicitly allowed.
+  if (!allowPaidApi) throw Error('付费 xAI 图片接口已停用；请改用 Grok 会员执行器（tools/grok-member-worker）');
   const stat = await fs.stat(configFile); if (stat.size > 16384) invalid();
   const configuration = validateConfig(JSON.parse(await fs.readFile(configFile,'utf8'))); const key = apiKey;
   const directory = path.dirname(configFile); await fs.mkdir(directory,{recursive:true,mode:0o700}); await fs.chmod(directory,0o700); await fs.chmod(configFile,0o600);

@@ -1,4 +1,4 @@
-import {shared,diff,apply,denormalize} from './collab-core.mjs?v=b7e1c04a9d23';
+import {shared,diff,apply,denormalize} from './collab-core.mjs?v=c3a9f05e71d4';
 let hooks,room=null,base=null,timer=null,busy=false,paused=false,people=[],cursor=null,pointerDown=false,needsRender=false;
 const client=crypto.randomUUID(),E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function api(action,method='GET',body,id=room?.id){const r=await fetch('/api/collaboration?action='+action+(id?'&room='+encodeURIComponent(id):''),{method,credentials:'same-origin',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});const d=await r.json();if(!r.ok){const e=Error(d.error||'协作请求失败');e.status=r.status;e.data=d;throw e}return d}
