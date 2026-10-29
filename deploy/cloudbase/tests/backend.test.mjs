@@ -73,7 +73,7 @@ test('actual image content is binary and download headers survive the adapter', 
 });
 
 test('authenticated image workspace and quota status use current handlers without disclosing server configuration', async () => {
-  const backend = await createBackend({publicOrigin: ORIGIN, env: {AI_API_KEY: 'test-server-only-key', AI_BASE_URL: 'https://model.example/v1', AI_IMAGE_MODEL: 'server-only-model'}, query: async sql => {
+  const backend = await createBackend({publicOrigin: ORIGIN, env: {JBP_IMAGE_EXECUTION: 'direct', AI_API_KEY: 'test-server-only-key', AI_BASE_URL: 'https://model.example/v1', AI_IMAGE_MODEL: 'server-only-model'}, query: async sql => {
     if (sql.includes('FROM studio_sessions')) return [USER];
     if (sql.startsWith('SELECT id FROM studio_accounts')) return [{id: USER.id}];
     if (sql.startsWith('SELECT image,video_second')) return [{image: 2000, video_second: 1000}];
