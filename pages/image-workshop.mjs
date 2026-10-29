@@ -82,16 +82,18 @@ function draw(){
   const c={...capture(),generation:++generationRevision};let requestId='';
   try{
    if(!getUser())throw Error('请先登录');if(!status?.configured)throw Error('模型服务尚未配置');if(!source.prompt.trim())throw Error('请填写画面要求');
-   busy=true;message='已提交生成请求，正在等待结果…';paintStatus();
+   busy=true;message='正在提交生成请求…';paintStatus();
+   const startedAt=Date.now();let progressTimer=0;
+   const tickProgress=()=>{if(!same(c.expected,c.view)||c.generation!==generationRevision)return;const s=Math.max(1,Math.round((Date.now()-startedAt)/1000));message=`模型正在出图，请稍候…（已等待 ${s} 秒）`;paintStatus();progressTimer=schedule(tickProgress,5000);};
    const references=(source.libraryRefs||[]).map(id=>({id}));
    for(const refId of source.refs){const a=getProject().assets.find(a=>a.id===refId);if(!a)throw Error('参考图不可用');if(a.imageLibraryId){if(!references.some(r=>r.id===a.imageLibraryId))references.push({id:a.imageLibraryId});continue}if(!/^data:image\/(png|jpeg|webp);base64,/.test(a.src))throw Error('参考图不可用');if(a.src.length>1048700)throw Error('参考图过大，请使用不超过768KB的图片');references.push({dataUrl:a.src});}
    if(references.length>3)throw Error('最多使用3张参考图，请先调整参考选择');
    const payload={requestId:uuid(),projectId:getProject().id,projectTitle:getProject().title,name:source.name||getProject().title+' · '+source.kind,kind:source.kind,prompt:source.prompt,ratio:source.ratio,resolution:source.resolution,references,...(source.metadata?{metadata:source.metadata}:{})};
-   requestId=payload.requestId;pendingByScope.set(c.expected,{id:requestId});const result=await request('generate',payload);
+   requestId=payload.requestId;pendingByScope.set(c.expected,{id:requestId});message='请求已发出，模型正在出图…';paintStatus();tickProgress();const result=await request('generate',payload);
    if(['done','failed'].includes(result.job?.status)&&pendingByScope.get(c.expected)?.id===requestId)pendingByScope.delete(c.expected);
    if(!same(c.expected,c.view)||c.generation!==generationRevision)return;resetQuota();message=result.job?.status==='done'?'图片已保存在个人图库，点击选用即可加入项目。':result.job?.status==='uncertain'?'结果待核对，请刷新图库并联系管理员；不要重复提交。':result.job?.error||'请在任务状态中核对结果';busy=false;await flow.updated(result.item);await refresh();return result;
   }catch(e){if(e.rejected&&pendingByScope.get(c.expected)?.id===requestId)pendingByScope.delete(c.expected);if(same(c.expected,c.view)&&c.generation===generationRevision){error(e);if(requestId)message+='。如请求已发出，请先刷新图库核对，避免重复扣额。';paintStatus();}if(propagate)throw e;
-  }finally{if(same(c.expected,c.view)&&c.generation===generationRevision){busy=false;paintStatus();}}
+  }finally{if(same(c.expected,c.view)&&c.generation===generationRevision){cancel(progressTimer);busy=false;paintStatus();}}
  }
  async function use(item,purpose=''){if(!current())return;const c=capture();if(busy)return;busy=true;paintStatus();try{const response=await fetchImage(imageContentUrl(item),{credentials:'same-origin'});if(!response.ok)throw Error('原图暂时无法读取，可能已被管理员删除');const dataUrl=await fileData(await response.blob());if(!same(c.expected,c.view))return;await onUse(item,dataUrl,{expected:c.expected,shotId:draft.shotId,nodeId:draft.nodeId,purpose});if(!same(c.expected,c.view))return;message=purpose.startsWith('video-')?'图片已带入视频生成。':purpose==='adjust'?'已打开裁剪与调色，调整版将另存。':draft.shotId?'图片已绑定所选分镜，也可在资产中心调看。':'图片已加入当前项目资产。';toast(message);}catch(e){if(same(c.expected,c.view))error(e)}finally{if(same(c.expected,c.view)){busy=false;paintStatus()}}}
  async function click(e){if(!current())return;const b=e.target.closest('[data-image-action]');if(!b||!host.contains(b))return;const a=b.dataset.imageAction;

@@ -66,7 +66,7 @@ LIN（轻声）
 const opt = (list, value, allowEmpty = false) =>
   `${allowEmpty ? `<option value="" ${value ? '' : 'selected'}>无</option>` : ''}${list.map(o => `<option value="${E(o.id)}" ${o.id === value ? 'selected' : ''}>${E(o.label || o.id)}</option>`).join('')}`;
 
-export function createPianchangDesk({getProject, getUser = () => null, change, toast, goto, uid, save, request = imageRequest, fetchImage = (...args) => fetch(...args), onGallery = () => {}}) {
+export function createPianchangDesk({getProject, getUser = () => null, change, toast, goto, uid, save, request = imageRequest, fetchImage = (...args) => fetch(...args), onGallery = () => {}, importScript}) {
   let host = null, pageKind = 'script', epoch = 0, busyKey = '', queue = null, picker = null, message = '', status = null, loading = false, library = [], historyView = null, preview = null, cite = '';
   const scope = () => `${getUser()?.id || 'guest'}:${getProject()?.id || ''}`;
   let mountedScope = '';
@@ -173,7 +173,7 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
   function scriptPane(p) {
     const desk=d(), part=scriptWindow(p,desk.scriptAll),draft=desk.scriptDrafts?.[scriptKey()],text=draft?.text ?? part.text,dirty=!!draft && draft.text!==part.text;
     return `${batchBar('拆解本集', '只更新本集条目，已有图片和历史版本会保留。', 'parse', !text.trim())}
-      <div class="pc-card"><div class="pc-row"><p class="pc-kicker">${desk.scriptAll ? '全剧原文 · 可一次粘贴多集' : '本集剧本 · 可粘贴或导入'}</p><div class="pc-row"><button type="button" data-pc="import">导入文件</button><button type="button" data-pc="script-restore" ${dirty ? '' : 'disabled'}>还原</button><button type="button" data-pc="script-save" ${dirty ? '' : 'disabled'}>保存剧本</button></div></div>
+      <div class="pc-card"><div class="pc-row"><p class="pc-kicker">${desk.scriptAll ? '全剧原文 · 可一次粘贴多集' : '本集剧本 · 可粘贴或导入'}</p><div class="pc-row"><button type="button" class="pc-go" data-pc="import-script">导入剧本</button><button type="button" data-pc="import">选择文件</button><button type="button" data-pc="script-restore" ${dirty ? '' : 'disabled'}>还原</button><button type="button" data-pc="script-save" ${dirty ? '' : 'disabled'}>保存剧本</button></div></div>
       <input type="file" data-pc-file accept=".txt,.md,.doc,.docx,.dotx,.rtf,.fountain,.fdx,.html,.htm,.xml,text/plain" hidden>
       <textarea class="pc-script" data-pc-field="script" placeholder="场次、动作、对白……">${E(text)}</textarea><p class="pc-muted" data-pc-draft-state>${dirty ? '草稿已暂存，保存后用于制作。' : '已保存。'}</p><div class="pc-row"><button type="button" data-pc="script-mode">${desk.scriptAll ? '只看本集' : '编辑全剧原文 / 粘贴多集'}</button><button type="button" data-pc="sample">填入《夜渡》示例</button></div>
       <label>本集风格锁<input data-pc-field="episodeStyle" value="${E(desk.episodeStyles?.[desk.episode] || '')}" placeholder="例如：冷调、雨夜、胶片质感，出图自动沿用"></label><p class="pc-muted">支持 Word（doc/docx）、txt、fountain、fdx、RTF。PDF 请先另存 Word / txt。</p></div>`;
@@ -596,6 +596,7 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
     if (act === 'script-save') { try{commit(()=>applyScriptDraft(getProject(),scriptKey()));toast('剧本已保存');}catch(err){error(err)} return; }
     if (act === 'script-restore') { commit(()=>{delete (d().scriptDrafts ||= {})[scriptKey()]}); return; }
     if (act === 'script-mode') { commit(()=>{d().scriptAll=!d().scriptAll}); return; }
+    if (act === 'import-script') { importScript?.(); return; }
     if (act === 'import') { host.querySelector('[data-pc-file]')?.click(); return; }
     if (act === 'sample') { commit(() => { const p = getProject(); if(p.script)(d().scriptHistory ||= []).push({text:p.script,created:Date.now()}); p.script = SAMPLE;d().scriptDrafts={};d().scriptAll=false; if (!p.title || p.title === '未命名项目') p.title = '夜渡'; }); toast('已填入《夜渡》'); return; }
     if (act === 'parse') { parse(); return; }
