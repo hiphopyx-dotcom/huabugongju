@@ -71,7 +71,7 @@ export async function startMemberWorker({configFile = path.join(HOME_DIR, 'confi
           continue;
         }
       } catch (error) {
-        log(`[${stamp()}] 连接异常：${error?.kind || 'temporary'}`);
+        log(`[${stamp()}] 连接异常：${error?.kind || 'temporary'}（${String(error?.status || '')} ${String(error?.message || error).slice(0, 200)}）`);
         if (error?.kind === 'revoked') break;
       }
       await pause(pollMs);

@@ -23,4 +23,4 @@ cat > "$PLIST" <<PL
 PL
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" "$PLIST"
-echo "已安装 $LABEL，日志：$HOME_DIR/worker.log"
+echo "已安装 ${LABEL}，日志：$HOME_DIR/worker.log"
