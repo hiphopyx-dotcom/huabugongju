@@ -9,7 +9,7 @@ const PNG='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAA
 const workspace=()=>({entities:[{id:'character-one',category:'characters',name:'阿青',episode:'1',scope:'series',fields:{description:'人物原文',role:'守门人',identityRegion:'中国 / 东亚面孔',age:'25',gender:'女',appearance:'长发',costume:'灰色长衫',extraPrompt:'保持同一人物'}}],style:'写实摄影',portraitStyle:'灰底定妆'});
 async function setup(options={}){
  const db=new PGlite(),query=async(sql,params=[])=>(await db.query(sql,params)).rows;let time=Date.now();
- for(const path of ['../schema.sql','../migrations/estimated-token-quota.sql','../image-schema.sql'])await db.exec(await readFile(new URL(path,import.meta.url),'utf8'));
+ for(const path of ['../schema.sql','../migrations/estimated-token-quota.sql','../image-schema.sql','../migrations/mac-image-worker.sql'])await db.exec(await readFile(new URL(path,import.meta.url),'utf8'));
  for(const [id,role] of [['one','user'],['two','user'],['admin','admin']]){await query('INSERT INTO studio_accounts(id,phone,name,password_hash,role,created) VALUES($1,$2,$1,$3,$4,0)',[id,id,'unused',role]);await query('INSERT INTO studio_sessions VALUES($1,$2,1,$3)',[hash('session-'+id),id,time+1000000])}
  const handler=createImageHandler(query,{key:'test',now:()=>time,generate:async()=>({dataUrl:PNG}),...options});
  const call=(action,body,user='one')=>handler(new Request('https://studio.test/api/images?action='+action,{method:body?'POST':'GET',headers:{Origin:'https://studio.test',Cookie:'__Host-jbp-session=session-'+user,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined}));
@@ -129,7 +129,7 @@ test('从无metadata列的旧库升级，既有图片默认元信息并保持原
  const imageId=randomUUID(),requestId=randomUUID(),data={requestId,projectId:'image-library',projectTitle:'图片库',name:'角色图片',kind:'角色',prompt:'',sourceId:'',sourceProjectTitle:''},inputHash=hash(JSON.stringify({...data,contentHash:hash(PNG)}));
  await query("INSERT INTO studio_images(id,owner,project_id,project_title,name,asset_kind,prompt,ratio,resolution,width,height,mime,bytes,data_url,source,request_key,input_hash,content_hash,created) VALUES($1,'one','image-library','图片库','角色图片','角色','','','',1,1,'image/png',1,$2,'imported',$3,$4,$5,0)",[imageId,PNG,requestId,inputHash,hash(PNG)]);
  await query("INSERT INTO studio_asset_records(owner,project_id,asset_id,project_title,name,kind,provenance,created,synced) VALUES('one','image-library',$1,'图片库','角色图片','image','local',0,0)",[imageId]);
- await db.exec(schema);await db.exec(schema);
+ await db.exec(schema);await db.exec(schema);await db.exec(await readFile(new URL('../migrations/mac-image-worker.sql',import.meta.url),'utf8'));
  const handler=createImageHandler(query,{key:''}),call=(action,body)=>handler(new Request('https://studio.test/api/images?action='+action,{method:body?'POST':'GET',headers:{Origin:'https://studio.test',Cookie:'__Host-jbp-session=session-one'},body:body?JSON.stringify(body):undefined}));
  const listed=await (await call('list')).json();assert.deepEqual(listed.items[0].metadata,{});assert.equal(listed.items[0].id,imageId);
  const replay=await call('import',{requestId,kind:'角色',dataUrl:PNG,metadata:{}});assert.equal(replay.status,201);assert.equal((await replay.json()).item.id,imageId);assert.equal((await query('SELECT * FROM studio_images')).length,1);

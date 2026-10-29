@@ -8,7 +8,7 @@ const PNG='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAA
 const reqId='71d885b0-13c0-43ef-b17f-47c728632654';
 const request=(handler,action,body,cookie='session-a')=>handler(new Request('https://studio.test/api/images?action='+action,{method:body?'POST':'GET',headers:{Origin:'https://studio.test',Cookie:'__Host-jbp-session='+cookie,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined}));
 async function setup(config={}){
- const db=new PGlite();for(const path of ['../schema.sql','../migrations/estimated-token-quota.sql','../image-schema.sql'])await db.exec(await readFile(new URL(path,import.meta.url),'utf8'));
+ const db=new PGlite();for(const path of ['../schema.sql','../migrations/estimated-token-quota.sql','../image-schema.sql','../migrations/mac-image-worker.sql'])await db.exec(await readFile(new URL(path,import.meta.url),'utf8'));
  const query=async(sql,params=[])=>(await db.query(sql,params)).rows;
  await query("INSERT INTO studio_accounts(id,phone,name,password_hash,role,created) VALUES ('a','13900000000','甲','unused','user',0)");
  await query('INSERT INTO studio_sessions VALUES($1,$2,1,$3)',[hash('session-a'),'a',Date.now()+1000000]);
