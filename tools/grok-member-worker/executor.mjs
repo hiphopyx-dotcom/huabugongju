@@ -43,6 +43,25 @@ async function visible(locator) {
   for (let i = 0; i < n; i++) {const item = locator.nth(i); if (await item.isVisible().catch(() => false)) return item;}
   return null;
 }
+/** Waits like a person for a control to show up instead of judging a half-loaded page. */
+async function waitVisible(page, make, ms = 20000) {
+  const end = Date.now() + ms;
+  for (;;) {const hit = await visible(make()); if (hit || Date.now() > end) return hit; await page.waitForTimeout(500);}
+}
+/** grok.com/imagine offers 2:3, 3:2, 1:1, 9:16, 16:9; the workbench also offers 3:4 and 4:3. */
+export const GROK_RATIOS = ['2:3', '3:2', '1:1', '9:16', '16:9'];
+export function grokRatio(ratio) {
+  if (!ratio || GROK_RATIOS.includes(ratio)) return ratio || '';
+  const [w, h] = String(ratio).split(':').map(Number);
+  if (!(w > 0 && h > 0)) return '';
+  const want = Math.log(w / h);
+  return GROK_RATIOS.map(r => [r, Math.abs(Math.log(Number(r.split(':')[0]) / Number(r.split(':')[1])) - want)]).sort((a, b) => a[1] - b[1])[0][0];
+}
+/** The prompt box is a role=textbox editor labelled 「向 Grok 提任何问题」 on the logged-in page. */
+export const PROMPT_BOX = /向 Grok 提任何问题|Ask Grok anything|Ask anything|描述|Describe/i;
+export const IMAGE_MODE = /^(图片|Image)$/;
+export const SUBMIT = /^(提交|Submit|发送|Send)$/i;
+export const STEPS = ['打开页面', '切图片', '选宽高比', '找输入框', '输入', '提交', '等图', '下载'];
 async function stopIfBlocked(page) {
   if (await visible(page.locator('iframe[src*="challenges.cloudflare.com"], iframe[title*="challenge" i], iframe[src*="captcha" i]'))) throw new MemberStop('CAPTCHA');
   if (await visible(page.getByRole('button', {name: /^(登录|sign in|log in)$/i})) || await visible(page.getByRole('link', {name: /^(登录|sign in|log in)$/i}))) throw new MemberStop('LOGIN');
@@ -67,54 +86,79 @@ export async function openProfile({chromium, profileDir}) {
 }
 
 /** Runs one prompt on grok.com/imagine and returns the original image bytes. */
-export async function imagineOnce(context, {prompt, ratio}, {timeoutMs = 240000, log = () => {}} = {}) {
-  const page = context.pages()[0] || await context.newPage();
-  await page.goto(IMAGINE_URL, {waitUntil: 'domcontentloaded', timeout: 60000});
-  await humanPause(page, 4000, 6000);
-  const cookie = await visible(page.getByRole('button', {name: /Dismiss cookie notice|关闭/i}));
-  if (cookie) {await cookie.click(); await humanPause(page);}
-  await stopIfBlocked(page);
-  const imageMode = await visible(page.getByRole('radio', {name: /^(图片|Image)$/})) || await visible(page.getByRole('button', {name: /^(图片|Image)$/}));
-  if (imageMode) {await imageMode.click(); await humanPause(page);}
-  if (ratio) {
-    const picker = await visible(page.getByRole('button', {name: /宽高比|aspect ratio/i}));
-    if (!picker) throw new MemberStop('PAGE');
-    await picker.click(); await humanPause(page);
-    const name = new RegExp('^\\s*' + ratio.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\s|$)');
-    const option = await visible(page.getByRole('menuitemradio', {name})) || await visible(page.getByRole('menuitem', {name}))
-      || await visible(page.getByRole('option', {name})) || await visible(page.getByText(ratio, {exact: true}));
-    if (!option) throw new MemberStop('PAGE');
-    await option.click(); await humanPause(page);
-    await page.keyboard.press('Escape').catch(() => {});
-  }
-  const box = await visible(page.locator('[contenteditable="true"]')) || await visible(page.locator('textarea'));
-  if (!box) throw new MemberStop('PAGE');
-  await box.click(); await humanPause(page, 400, 900);
-  await page.keyboard.type(prompt.trim(), {delay: rand(25, 60)});
-  await humanPause(page, 800, 1600);
-  const before = new Set(await page.evaluate(() => [...document.images].map(i => i.currentSrc || i.src)));
-  const submit = await visible(page.getByRole('button', {name: /^(提交|Submit|发送|Send)$/i}));
-  if (!submit) throw new MemberStop('PAGE');
-  await submit.click();
-  log('已提交提示词，等待 Grok 出图');
-  const deadline = Date.now() + timeoutMs;
-  let pick = null, stableSince = 0;
-  while (Date.now() < deadline) {
-    await page.waitForTimeout(3000);
+export async function imagineOnce(context, {prompt, ratio}, {timeoutMs = 240000, log = () => {}, dryRun = false} = {}) {
+  let current = '';
+  const step = name => {current = name; log('步骤：' + name);};
+  const fail = (reason = 'PAGE', definite = true) => {const e = new MemberStop(reason, definite); e.step = current; return e;};
+  try {
+    const page = context.pages()[0] || await context.newPage();
+    step('打开页面');
+    await page.goto(IMAGINE_URL, {waitUntil: 'domcontentloaded', timeout: 60000});
+    await humanPause(page, 3000, 5000);
+    const cookie = await visible(page.getByRole('button', {name: /Dismiss cookie notice/i}));
+    if (cookie) {await cookie.click(); await humanPause(page);}
     await stopIfBlocked(page);
-    const found = await page.evaluate(seen => {
-      const fresh = [...document.images].filter(i => !seen.includes(i.currentSrc || i.src) && i.complete && i.naturalWidth >= 512 && i.naturalHeight >= 512 && i.offsetParent);
-      return fresh.map(i => ({src: i.currentSrc || i.src, w: i.naturalWidth, h: i.naturalHeight}));
-    }, [...before]);
-    const best = found.sort((a, b) => b.w * b.h - a.w * a.h)[0] || null;
-    if (best && pick?.src === best.src) {if (Date.now() - stableSince > 6000) break;}
-    else if (best) {pick = best; stableSince = Date.now();}
+    const findBox = () => page.getByRole('textbox', {name: PROMPT_BOX}).or(page.locator('[contenteditable="true"], textarea'));
+    if (!await waitVisible(page, findBox, 30000)) {await stopIfBlocked(page); throw fail();}
+    step('切图片');
+    const imageMode = await waitVisible(page, () => page.getByRole('radio', {name: IMAGE_MODE}).or(page.getByRole('button', {name: IMAGE_MODE})), 10000);
+    if (!imageMode) throw fail();
+    if (await imageMode.getAttribute('aria-checked') !== 'true') {await imageMode.click(); await humanPause(page);}
+    if (await imageMode.getAttribute('aria-checked') === 'false') throw fail();
+    const want = grokRatio(ratio);
+    if (want) {
+      step('选宽高比');
+      const picker = await waitVisible(page, () => page.getByRole('button', {name: /宽高比|aspect ratio/i}), 10000);
+      if (!picker) throw fail();
+      if (!(await picker.innerText().catch(() => '')).includes(want)) {
+        await picker.click(); await humanPause(page);
+        const name = new RegExp('^\\s*' + want.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\s|$)');
+        const option = await waitVisible(page, () => page.getByRole('menuitemradio', {name}).or(page.getByRole('menuitem', {name})).or(page.getByRole('option', {name})), 5000);
+        if (!option) throw fail();
+        await option.click(); await humanPause(page);
+        if (await picker.getAttribute('data-state') === 'open') await page.keyboard.press('Escape').catch(() => {});
+      }
+    }
+    step('找输入框');
+    const box = await waitVisible(page, findBox, 10000);
+    if (!box) throw fail();
+    step('输入');
+    await box.click(); await humanPause(page, 400, 900);
+    await page.keyboard.type(prompt.trim(), {delay: rand(25, 60)});
+    await humanPause(page, 800, 1600);
+    const before = new Set(await page.evaluate(() => [...document.images].map(i => i.currentSrc || i.src)));
+    step('提交');
+    const submit = await waitVisible(page, () => page.getByRole('button', {name: SUBMIT}), 10000);
+    if (!submit) throw fail();
+    // Rehearsal: stop before submitting and clear what was typed.
+    if (dryRun) {await page.keyboard.press('Meta+A'); await page.keyboard.press('Backspace'); return {dryRun: true, step: current};}
+    await submit.click();
+    step('等图');
+    const deadline = Date.now() + timeoutMs;
+    let pick = null, stableSince = 0;
+    while (Date.now() < deadline) {
+      await page.waitForTimeout(3000);
+      await stopIfBlocked(page);
+      const found = await page.evaluate(seen => {
+        const fresh = [...document.images].filter(i => !seen.includes(i.currentSrc || i.src) && i.complete && i.naturalWidth >= 512 && i.naturalHeight >= 512 && i.offsetParent);
+        return fresh.map(i => ({src: i.currentSrc || i.src, w: i.naturalWidth, h: i.naturalHeight}));
+      }, [...before]);
+      const best = found.sort((a, b) => b.w * b.h - a.w * a.h)[0] || null;
+      if (best && pick?.src === best.src) {if (Date.now() - stableSince > 6000) break;}
+      else if (best) {pick = best; stableSince = Date.now();}
+    }
+    if (!pick) throw fail('TIMEOUT', false);
+    step('下载');
+    await humanPause(page);
+    const bytes = await downloadOriginal(page, pick.src);
+    if (!bytes?.length) throw fail('PAGE', false);
+    return {bytes, width: pick.w, height: pick.h};
+  } catch (error) {
+    if (error instanceof MemberStop && !error.step) error.step = current;
+    if (error && typeof error === 'object' && !error.step) error.step = current;
+    log('卡在步骤：' + (current || '启动') + '（' + (error?.reason || error?.message || error) + '）');
+    throw error;
   }
-  if (!pick) throw new MemberStop('TIMEOUT', false);
-  await humanPause(page);
-  const bytes = await downloadOriginal(page, pick.src);
-  if (!bytes?.length) throw new MemberStop('PAGE', false);
-  return {bytes, width: pick.w, height: pick.h};
 }
 
 /** Prefer the page's own download button; otherwise read the image the page already shows. */

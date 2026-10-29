@@ -25,13 +25,13 @@ export async function processJob(job, {chromium, profileDir, archiveDir = ARCHIV
   const started = Date.now(); let context;
   try {
     context = await open({chromium, profileDir});
-    const image = await imagine(context, job, {log});
+    const image = await imagine(context, job, {log: line => log(`[${stamp()}] ${line}`)});
     const saved = await compress(image.bytes, {id: job.id, archiveDir});
     const dataUrl = validateDataUrl(`data:${saved.mime};base64,${saved.bytes.toString('base64')}`);
     return {result: {dataUrl}, stats: {ms: Date.now() - started, before: saved.before, after: saved.after, file: saved.original}};
   } catch (error) {
-    log(`[${stamp()}] 任务失败：${error instanceof MemberStop ? error.reason : '页面异常'}`);
-    return {result: completionFor(error), stats: {ms: Date.now() - started}};
+    log(`[${stamp()}] 任务失败：${error instanceof MemberStop ? error.reason : '页面异常'}${error?.step ? '，卡在步骤：' + error.step : ''}`);
+    return {result: completionFor(error), stats: {ms: Date.now() - started, ...(error?.step ? {step: error.step} : {})}};
   } finally {await context?.close().catch(() => {});}
 }
 
