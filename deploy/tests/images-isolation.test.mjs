@@ -20,6 +20,7 @@ async function fixture(t, generate = async () => ({dataUrl: PNG})) {
   await db.exec(readFileSync(new URL('../schema.sql', import.meta.url), 'utf8'));
   await db.exec(readFileSync(new URL('../migrations/estimated-token-quota.sql', import.meta.url), 'utf8'));
   await db.exec(readFileSync(new URL('../image-schema.sql', import.meta.url), 'utf8'));
+  await db.exec(readFileSync(new URL('../migrations/mac-image-worker.sql', import.meta.url), 'utf8'));
   const now = Date.now();
   for (const [id, role, phone] of identities) {
     await db.query('INSERT INTO studio_accounts(id,phone,name,password_hash,role,created) VALUES($1,$2,$3,$4,$5,$6)', [id, phone, id, 'test-only-unused', role, now]);

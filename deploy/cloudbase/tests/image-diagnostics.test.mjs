@@ -152,7 +152,7 @@ test('persistence failure emits only a fixed marker and never the database error
 test('backend offers its existing image configuration once without rereading environment or exposing it in responses', async () => {
   let reads = 0;
   const configurations = [];
-  const env = {get XAI_API_KEY() {reads++; return configuration.key;}, XAI_IMAGE_MODEL: configuration.model};
+  const env = {JBP_IMAGE_EXECUTION: 'direct', get XAI_API_KEY() {reads++; return configuration.key;}, XAI_IMAGE_MODEL: configuration.model};
   const backend = await createBackend({query: async () => [], publicOrigin: 'https://studio.example', env,
     onImageConfiguration: value => configurations.push(value)});
   // imageServerConfig checks the env value type and then reads its value once.

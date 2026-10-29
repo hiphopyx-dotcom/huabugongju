@@ -8,7 +8,7 @@ const PNG='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAA
 const reqId='71d885b0-13c0-43ef-b17f-47c728632654';
 const request=(handler,action,body,cookie='session-a')=>handler(new Request('https://studio.test/api/images?action='+action,{method:body?'POST':'GET',headers:{Origin:'https://studio.test',Cookie:'__Host-jbp-session='+cookie,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined}));
 async function setup(config={}){
- const db=new PGlite();for(const path of ['../schema.sql','../migrations/estimated-token-quota.sql','../image-schema.sql'])await db.exec(await readFile(new URL(path,import.meta.url),'utf8'));
+ const db=new PGlite();for(const path of ['../schema.sql','../migrations/estimated-token-quota.sql','../image-schema.sql','../migrations/mac-image-worker.sql'])await db.exec(await readFile(new URL(path,import.meta.url),'utf8'));
  const query=async(sql,params=[])=>(await db.query(sql,params)).rows;
  await query("INSERT INTO studio_accounts(id,phone,name,password_hash,role,created) VALUES ('a','13900000000','甲','unused','user',0)");
  await query('INSERT INTO studio_sessions VALUES($1,$2,1,$3)',[hash('session-a'),'a',Date.now()+1000000]);
@@ -16,10 +16,11 @@ async function setup(config={}){
 }
 
 test('图片配置只接受专用密钥或显式通用base，不从通用密钥猜路由',()=>{
- assert.equal(imageServerConfig({AI_API_KEY:'generic-secret'}).key,'');
- assert.equal(imageServerConfig({AI_API_KEY:'generic-secret',AI_BASE_URL:'http://localhost:8000/v1'}).key,'');
- assert.equal(imageServerConfig({AI_API_KEY:'generic-secret',AI_BASE_URL:'https://gateway.example/v1',AI_IMAGE_MODEL:'private-model'}).baseUrl,'https://gateway.example/v1');
- const dedicated=imageServerConfig({AI_API_KEY:'generic-secret',AI_BASE_URL:'https://gateway.example/v1',XAI_API_KEY:'dedicated-secret',XAI_IMAGE_MODEL:'chosen'});
+ assert.deepEqual(imageServerConfig({XAI_API_KEY:'live-key'}),{execution:'mac',key:'',baseUrl:'',model:''});
+ assert.equal(imageServerConfig({JBP_IMAGE_EXECUTION:'direct',AI_API_KEY:'generic-secret'}).key,'');
+ assert.equal(imageServerConfig({JBP_IMAGE_EXECUTION:'direct',AI_API_KEY:'generic-secret',AI_BASE_URL:'http://localhost:8000/v1'}).key,'');
+ assert.equal(imageServerConfig({JBP_IMAGE_EXECUTION:'direct',AI_API_KEY:'generic-secret',AI_BASE_URL:'https://gateway.example/v1',AI_IMAGE_MODEL:'private-model'}).baseUrl,'https://gateway.example/v1');
+ const dedicated=imageServerConfig({JBP_IMAGE_EXECUTION:'direct',AI_API_KEY:'generic-secret',AI_BASE_URL:'https://gateway.example/v1',XAI_API_KEY:'dedicated-secret',XAI_IMAGE_MODEL:'chosen'});
  assert.equal(dedicated.key,'dedicated-secret');assert.equal(dedicated.baseUrl,'https://api.x.ai/v1');assert.equal(dedicated.model,'chosen');
 });
 
