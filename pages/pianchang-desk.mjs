@@ -67,7 +67,7 @@ const opt = (list, value, allowEmpty = false) =>
   `${allowEmpty ? `<option value="" ${value ? '' : 'selected'}>无</option>` : ''}${list.map(o => `<option value="${E(o.id)}" ${o.id === value ? 'selected' : ''}>${E(o.label || o.id)}</option>`).join('')}`;
 
 export function createPianchangDesk({getProject, getUser = () => null, change, toast, goto, uid, save, request = imageRequest, fetchImage = (...args) => fetch(...args), onGallery = () => {}, importScript}) {
-  let host = null, pageKind = 'script', epoch = 0, busyKey = '', queue = null, picker = null, message = '', status = null, loading = false, library = [], historyView = null, preview = null, cite = '';
+  let host = null, pageKind = 'script', epoch = 0, busyKey = '', queue = null, picker = null, grokJob = null, message = '', status = null, loading = false, library = [], historyView = null, preview = null, cite = '';
   const scope = () => `${getUser()?.id || 'guest'}:${getProject()?.id || ''}`;
   let mountedScope = '';
   const detailState = new Map();
@@ -86,7 +86,7 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
   function unmount() {
     epoch++; dragging=null;
     if (queue) queue.stop = true;
-    queue = null; busyKey = ''; picker = null; preview = null; historyView = null;
+    queue = null; busyKey = ''; picker = null; grokJob = null; preview = null; historyView = null;
     if (host) { host.removeEventListener('click',onClick); host.removeEventListener('change',onChange); host.removeEventListener('input',onInput); host.removeEventListener('pointerdown',onPointerDown);host.removeEventListener('pointermove',onPointerMove);host.removeEventListener('pointerup',onPointerUp);host.removeEventListener('pointercancel',onPointerUp); }
     host = null;
   }
@@ -140,7 +140,7 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
     const p = getProject();
     const desk = d();
     const tab = desk.tab;
-    host.innerHTML = `<div class="pc-desk">${shell(p, desk, tab)}${picker ? pop(picker) : ''}${preview ? imageDialog(preview) : ''}${historyView ? historyDialog(historyView) : ''}</div>`;
+    host.innerHTML = `<div class="pc-desk">${shell(p, desk, tab)}${picker ? pop(picker) : ''}${grokPop()}${preview ? imageDialog(preview) : ''}${historyView ? historyDialog(historyView) : ''}</div>`;
     for(const el of host.querySelectorAll('[data-pc-detail]')) if(detailState.has(el.dataset.pcDetail))el.open=detailState.get(el.dataset.pcDetail);
     if (scroller) scroller.scrollTop = y;
     if (cite && tab === 'script') focusSource();
@@ -199,7 +199,7 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
     const ratio = slotAspect(batchOf(kind),kind).replace(':',' / '), pending = d().pending[key];
     const attrs = `data-id="${E(entityId)}" data-kind="${E(kind)}" data-batch="${batchOf(kind)}"`;
     return `<figure class="pc-still"><button type="button" class="pc-frame" style="aspect-ratio:${ratio}" data-pc="view" ${attrs} ${image.src ? '' : 'disabled'} aria-label="查看${E(label)}">${image.src ? `<img src="${E(image.src)}" alt="${E(label)}" loading="lazy">` : `<span>${busy ? '正在出…' : pending ? '结果待核对' : '待出'}</span>`}</button><figcaption>${E(label)}${image.locked ? ' · 已锁定' : ''}</figcaption>
-      <div class="pc-still-actions"><button type="button" data-pc="one" ${attrs} ${queue || pending || image.locked ? 'disabled' : ''}>${busy ? '出图中' : image.src ? '重出' : '出这张'}</button><button type="button" data-pc="slot" ${attrs}>${image.src ? '查看 / 改图' : '参考 / 提示词'}</button></div></figure>`;
+      <div class="pc-still-actions"><button type="button" data-pc="one" ${attrs} ${queue || pending || image.locked ? 'disabled' : ''}>${image.src ? '再用 Grok' : '打开 Grok'}</button><button type="button" data-pc="slot" ${attrs}>${image.src ? '查看 / 改图' : '参考 / 提示词'}</button></div></figure>`;
   }
   function batchOf(kind) {
     if (kind === 'hero') return 'props';
@@ -209,7 +209,7 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
   }
   function charactersPane(desk) {
     const list = shown(desk.characters);
-    return `${batchBar('出本集人物', '点一次排队出完所有空位（正面、侧面、背面 + 八张表情）。已有的图不会覆盖。', 'batch-characters', !list.length)}
+    return `${batchBar('出本集人物', '一次打开一张。用你的 Grok 额度出完，把图放回格子，再点下一张。已有的图不会覆盖。', 'batch-characters', !list.length)}
       <button type="button" class="pc-ghost" data-pc="add-char" ${queue ? 'disabled' : ''}>增加人物</button>
       <ol class="pc-stack">${list.map(c => `<li class="pc-card"><div class="pc-row"><div><input class="pc-name" data-pc-entity="characters" data-id="${E(c.id)}" data-key="name" value="${E(c.name)}"><small class="pc-chip">${c.scope === 'series' ? '全剧' : '本集'}</small><p class="pc-muted">${E(c.role)} · ${E(c.age)} · ${E(c.gender)}</p></div><div class="pc-row">${scopeBtn('characters', c)}<button type="button" data-pc="download-entity" data-id="${E(c.id)}" data-batch="characters">下载这个人</button><button type="button" data-pc="batch-one" data-batch="characters" data-id="${E(c.id)}">${queue?.entityId === c.id ? '取消' : '出这个人'}</button><button type="button" data-pc="del-char" data-id="${E(c.id)}">删除</button></div></div>
         <details class="pc-bio" data-pc-detail="bio:${E(c.id)}"><summary>人物设定与质感 · 点击展开</summary><div class="pc-grid3"><label>身份<input data-pc-entity="characters" data-id="${E(c.id)}" data-key="role" value="${E(c.role || '')}"></label><label>年龄<input data-pc-entity="characters" data-id="${E(c.id)}" data-key="age" value="${E(c.age || '')}"></label><label>性别<input data-pc-entity="characters" data-id="${E(c.id)}" data-key="gender" value="${E(c.gender || '')}"></label></div><label>外貌<textarea data-pc-entity="characters" data-id="${E(c.id)}" data-key="appearance" rows="3">${E(c.appearance || '')}</textarea></label><label>服装<textarea data-pc-entity="characters" data-id="${E(c.id)}" data-key="costume" rows="2">${E(c.costume || '')}</textarea></label>${gradeBox(c.id)}</details>
@@ -224,7 +224,7 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
   }
   function locationsPane(desk) {
     const list = shown(desk.locations);
-    return `${batchBar('出本集场景', '中间白模是鸟瞰。先出白模，再出北机位；左右参考北机位和白模；南机位再根据左右补背面。', 'batch-locations', !list.length)}
+    return `${batchBar('出本集场景', '一次打开一张。先出俯视，再出北机位。用你的 Grok 额度，出完把图放回来。', 'batch-locations', !list.length)}
       <ol class="pc-stack">${list.map(l => `<li class="pc-card"><div class="pc-row"><div><input class="pc-name" data-pc-entity="locations" data-id="${E(l.id)}" data-key="name" value="${E(l.name)}"><small class="pc-chip">${l.scope === 'series' ? '全剧' : '本集'}</small><p class="pc-muted">${E(l.heading || '')}</p><label>空间描述<textarea data-pc-entity="locations" data-id="${E(l.id)}" data-key="description">${E(l.description || '')}</textarea></label><p class="pc-kicker">俯视：上北下南 · 左西右东。先出俯视白模，四向只从这张图的四边拍。</p></div><div class="pc-row">${scopeBtn('locations', l)}<button type="button" data-pc="download-entity" data-id="${E(l.id)}" data-batch="locations">下载这个场景</button><button type="button" data-pc="batch-one" data-batch="locations" data-id="${E(l.id)}">${queue?.entityId === l.id ? '取消' : '出这个场景'}</button></div></div>
         <div class="pc-grid3">${[['time_of_day','时间'],['weather','天气'],['atmosphere','氛围'],['world_anchors','空间锚点 / 门窗家具方位']].map(([key,label])=>`<label>${label}<textarea data-pc-entity="locations" data-id="${E(l.id)}" data-key="${key}" rows="2">${E(l[key] || '')}</textarea></label>`).join('')}</div>
         <div class="pc-picks">${pick('locations' , l.id, 'shot_size', '景别', L.SHOT_SIZES, l.shot_size || '全景')}${pick('locations', l.id, 'composition', '机位', L.ANGLES, l.composition || '眼睛平视')}${pick('locations', l.id, 'camera_move', '运镜', L.CAMERA_MOVES, l.camera_move || '固定镜头')}${pick('locations', l.id, 'lighting', '光影', L.LIGHTINGS, l.lighting || '自然光')}</div>
@@ -233,13 +233,13 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
   }
   function propsPane(desk) {
     const list = shown(desk.props);
-    return `${batchBar('出本集道具', '点一次排队出完所有空位。已有的图不会覆盖。', 'batch-props', !list.length)}
+    return `${batchBar('出本集道具', '一次打开一张。用你的 Grok 额度出完，把图放回格子。已有的图不会覆盖。', 'batch-props', !list.length)}
       <ol class="pc-stack">${list.map(item => `<li class="pc-card"><div class="pc-row"><div><input class="pc-name" data-pc-entity="props" data-id="${E(item.id)}" data-key="name" value="${E(item.name)}"><small class="pc-chip">${item.scope === 'series' ? '全剧' : '本集'}</small><label>道具描述<textarea data-pc-entity="props" data-id="${E(item.id)}" data-key="description">${E(item.description || '')}</textarea></label></div>${scopeBtn('props', item)}</div><div class="pc-prop">${still(item.id,'hero','道具主图','1:1')}</div>
         <div class="pc-grid3"><label>材质 / 磨损<textarea data-pc-entity="props" data-id="${E(item.id)}" data-key="material" rows="2">${E(item.material || '')}</textarea></label><label>谁在用<input data-pc-entity="props" data-id="${E(item.id)}" data-key="used_by" value="${E(item.used_by || '')}"></label><label>叙事功能<textarea data-pc-entity="props" data-id="${E(item.id)}" data-key="significance" rows="2">${E(item.significance || '')}</textarea></label></div></li>`).join('')}</ol>
       ${list.length ? '' : '<p class="pc-empty">拆解后出现道具。</p>'}${fuseBox()}`;
   }
   function storyPane(desk) {
-    return `${batchBar('按参考出本集分镜', '点一次排队出完所有空位。过肩可一次出正反打。已有的图不会覆盖。', 'batch-storyboard', !shownBeats().length)}
+    return `${batchBar('按参考出本集分镜', '一次打开一张。用你的 Grok 额度出完，把图放回格子。已有的图不会覆盖。', 'batch-storyboard', !shownBeats().length)}
       <ol class="pc-stack">${shownBeats().map((b, i, all) => beatCard(desk, b, all[i + 1])).join('')}</ol>
       <button type="button" class="pc-ghost" data-pc="add-beat">插入一段</button><details class="pc-card"><summary>归档分镜 · ${desk.archivedShots.filter(b=>b.episode === desk.episode).length} 镜</summary><p class="pc-muted">原文改动后未匹配的旧镜头保存在这里，旧图仍可查看。</p>${desk.archivedShots.filter(b=>b.episode === desk.episode).map(b=>`<p>${E(b.scene_heading)} · ${E((b.action || b.dialogue || '').slice(0,100))}<button type="button" data-pc="restore-beat" data-id="${E(b.id)}">恢复这镜</button></p>`).join('')}</details>
       ${shownBeats().length ? '' : '<p class="pc-empty">拆解后出现连续分镜。</p>'}${fuseBox()}`;
@@ -368,7 +368,7 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
       const image=slotImage(getProject(),d(),`${preview.id}:${preview.kind}`);
       if(image.locked)throw Error('管理员已锁定，不能修改'); if(!preview.edit?.trim())throw Error('请先写修改要求');
       const {id,kind,batch,edit}=preview; preview=null;
-      void runJobs([{id,kind,batch,edit:edit.trim(),parentId:image.item?.id,parentSrc:image.src,label:'修改版'}]); return true;
+      armGrok(batch, id, kind, edit.trim()); return true;
     }
     if (act === 'drop') {
       const key=`${btn.dataset.id}:${btn.dataset.kind}`, image=slotImage(getProject(),d(),key), token=capture();
@@ -407,6 +407,44 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
     return desk.aspect || '16:9';
   }
   function promptFor(batch,entity,kind) { return prepareStill(getProject(),d(),batch,entity.id,kind).prompt; }
+  function grokPop() {
+    const job = grokJob;
+    if (!job) return '';
+    return `<div class="pc-pop"><div class="pc-pop-card"><div class="pc-row"><div><b>用你的 Grok 额度出这张</b><p class="pc-muted">${E(job.label)}。打开 Grok 生成，再把图放回这一格。不走付费接口。</p></div><button type="button" data-pc="grok-close">关闭</button></div><textarea readonly rows="8" aria-label="出图提示词">${E(job.prompt)}</textarea><div class="pc-row"><button type="button" class="pc-go" data-pc="grok-open">复制提示词并打开 Grok</button><label class="pc-go">放回这张图<input type="file" accept="image/png,image/jpeg,image/webp" data-pc-grok-file hidden></label></div></div></div>`;
+  }
+  function armGrok(batch, id, kind, editNote = '') {
+    const entity = entityOf(batch, id);
+    if (!entity) { toast('这一格没有了'); return; }
+    let prompt = '';
+    try { prompt = promptFor(batch, entity, kind); }
+    catch (err) { toast(err.message || '这张现在不能出'); return; }
+    if (editNote) prompt = `保留原图未要求修改的部分。修改要求：${editNote}\n` + prompt;
+    grokJob = {batch, id, kind, prompt, label: `${entity.name || entity.scene_heading || kind}`};
+    paint();
+  }
+  function placeGrok(batch, id, kind, src, prompt) {
+    grokJob = null;
+    message = '这张图已放回格子';
+    commit(() => {
+      const desk = d();
+      const project = getProject();
+      const entity = entityOf(batch, id);
+      if (desk.stills[keyOf(id, kind)] && desk.stills[keyOf(id, kind)] !== src) desk.history[keyOf(id, kind)] = [desk.stills[keyOf(id, kind)], ...(desk.history[keyOf(id, kind)] || [])].slice(0, 8);
+      const key = keyOf(id, kind);
+      desk.stills[key] = src;
+      desk.prompts[key] = prompt;
+      delete desk.pending[key];
+      const assetId = uid();
+      project.assets.push({id: assetId, name: String(entity?.name || entity?.scene_heading || kind).slice(0, 40), kind: 'image', type: {characters:'角色',locations:'场景',props:'道具',storyboard:'分镜'}[batch] || '分镜', src, created: Date.now(), locked: false, description: prompt.slice(0, 200)});
+      if (batch === 'storyboard' && kind === 'frame') {
+        const beat = desk.beats.find(b => b.id === id);
+        if (beat) beat.frameAssetId = assetId;
+        const shot = project.shots.find(s => s.id === id);
+        if (shot) shot.assetId = assetId;
+      }
+    });
+  }
+  function keyOf(id, kind) { return `${id}:${kind}`; }
   function entityOf(batch,id) { return entityFor(d(),batch,id); }
   function shownBeats() { return d().beats.filter(b=>b.episode === d().episode); }
   function jobsFor(batch, onlyId) {
@@ -527,6 +565,19 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
   async function onChange(e) {
     if (!current()) return;
     const el = e.target, token = capture();
+    if (el.hasAttribute('data-pc-grok-file')) {
+      const file = el.files?.[0];
+      el.value = '';
+      const job = grokJob;
+      if (!file || !job) return;
+      if (!file.type.startsWith('image/')) { toast('请放回 jpg 或 png'); return; }
+      if (file.size > 8 * 1024 * 1024) { toast('这张图超过 8MB'); return; }
+      const reader = new FileReader();
+      reader.onload = () => placeGrok(job.batch, job.id, job.kind, String(reader.result || ''), job.prompt);
+      reader.onerror = () => toast('读不到这张图');
+      reader.readAsDataURL(file);
+      return;
+    }
     if (queue) { paint(); return; }
     try {
       if(el.dataset.pcAxisPosition){commit(()=>{const b=d().beats.find(b=>b.id===el.dataset.beat);if(b){const block=axisBlock(b.ots_block);block[el.dataset.pcAxisPosition].along=Number(el.value);b.ots_block=JSON.stringify(axisBlock(block));syncShots(getProject(),d())}});return;}
@@ -634,24 +685,25 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
       cite = beat?.script_excerpt || ''; focusSource();
       return;
     }
-    if (act === 'one') {
-      const {batch, id, kind} = btn.dataset;
-      if (busyKey === `${id}:${kind}`) { if (queue) queue.stop = true; return; }
-      void runJobs([{batch,id,kind,label:entityOf(batch,id)?.name || '分镜'}]);
+    if (act === 'grok-close') { grokJob = null; paint(); return; }
+    if (act === 'grok-open') {
+      const text = grokJob?.prompt || '';
+      if (!text) return;
+      navigator.clipboard?.writeText(text).then(() => toast('提示词已复制，到 Grok 里粘贴出图')).catch(() => toast('打开 Grok 后，把提示词贴进去'));
+      window.open('https://grok.com', '_blank', 'noopener');
       return;
     }
-    if (act === 'batch-characters' || act === 'batch-locations' || act === 'batch-props' || act === 'batch-storyboard') {
-      const batch = act.replace('batch-', '');
-      void runJobs(jobsFor(batch));
+    if (act === 'one') { armGrok(btn.dataset.batch, btn.dataset.id, btn.dataset.kind); return; }
+    if (act === 'batch-characters' || act === 'batch-locations' || act === 'batch-props' || act === 'batch-storyboard' || act === 'batch-one') {
+      const jobs = jobsFor(act === 'batch-one' ? btn.dataset.batch : act.replace('batch-', ''), act === 'batch-one' ? btn.dataset.id : undefined);
+      if (!jobs.length) { toast('空位都有图了'); return; }
+      armGrok(jobs[0].batch, jobs[0].id, jobs[0].kind);
       return;
     }
-    if (act === 'batch-one') { void runJobs(jobsFor(btn.dataset.batch, btn.dataset.id)); return; }
     if (act === 'pair') {
       const beat = d().beats.find(b => b.id === btn.dataset.id);
-      if (!beat) return;
-      const jobs = ['frame', 'reverse'].filter(kind => !d().stills[`${beat.id}:${kind}`]).map(kind => ({batch:'storyboard', id: beat.id, kind, label: kind === 'frame' ? '正打' : '反打'}));
-      if (!jobs.length) { toast('正反打都有了'); return; }
-      void runJobs(jobs);
+      if (!beat?.ots_from || !beat?.ots_to) { toast('先选过谁的肩、拍谁的脸'); return; }
+      armGrok('storyboard', beat.id, 'frame');
       return;
     }
   }
