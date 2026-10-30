@@ -1,6 +1,6 @@
 import {memberError} from '../../public/studio/model-privacy.mjs';
 import {randomUUID} from 'node:crypto';
-import {AccountError,hash,token,cookie,safeOrigin,requireAdmin} from './security.mjs';
+import {AccountError,hash,token,sessionToken,safeOrigin,allowBearerOrigin,requireAdmin,refuseCrossOriginAdmin} from './security.mjs';
 const json=(value,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 const ERRORS={CLI_ERROR:'本机生成失败，请管理员检查登录或额度',EMPTY_RESULT:'模型没有返回文字',TIMEOUT:'本机生成超时，未自动重复调用',RESULT_TOO_LARGE:'生成结果过大，请缩短要求'};
 const SCRIPT_HOST='语言模型写作主机';
@@ -9,7 +9,7 @@ export function createGenerationHandler(query,config={}){return async req=>{try{
 const url=new URL(req.url),action=url.searchParams.get('action')||'jobs',now=config.now?.()??Date.now();
 const q=(s,...p)=>query(s,p),one=async(s,...p)=>(await q(s,...p))[0];
 const bearer=req.headers.get('authorization');const workerAction=['poll','heartbeat','complete'].includes(action);
-if(!workerAction||req.headers.has('origin'))safeOrigin(req);
+if(workerAction){if(req.headers.has('origin'))safeOrigin(req)}else allowBearerOrigin(req);
 let body={};if(req.method!=='GET'){const raw=await req.text();if(Buffer.byteLength(raw)>140000)throw new AccountError(413,'请求过大');try{body=JSON.parse(raw)}catch{throw new AccountError(400,'请求格式错误')}if(!body||Array.isArray(body)||typeof body!=='object')throw new AccountError(400,'请求格式错误')}
 const validity="EXISTS (SELECT 1 FROM studio_accounts a JOIN studio_grok_accounts g ON g.id=studio_generation_jobs.grok_account_id WHERE a.id=studio_generation_jobs.owner AND a.active=true AND g.active=true AND a.session_version=studio_generation_jobs.session_version AND (a.role='admin' OR a.grok_account_id=studio_generation_jobs.grok_account_id OR g.label='语言模型写作主机'))";
 const cleanup=async account=>{
@@ -41,8 +41,9 @@ let result=null,error=null;if(body.error){if(!Object.hasOwn(ERRORS,body.error))t
 const saved=await one("UPDATE studio_generation_jobs SET status=$1,result=$2,error=$3,updated=$4 WHERE id=$5 AND grok_account_id=$6 AND status='running' AND lease_hash=$7 AND leased_until>$4 AND "+validity+' RETURNING id',error?'failed':'done',result,error,now,job.id,account,job.lease_hash);
 if(!saved)throw new AccountError(409,'任务已失效');await release();if(config.quota)await config.quota.reconcile(job.owner,now);return json({saved:true,status:error?'failed':'done'});
 }
-const raw=cookie(req),user=raw?await one('SELECT a.* FROM studio_sessions s JOIN studio_accounts a ON a.id=s.user_id WHERE s.token_hash=$1 AND s.expires>$2 AND a.active=true AND s.version=a.session_version',hash(raw),now):null;
+const raw=sessionToken(req),user=raw?await one('SELECT a.* FROM studio_sessions s JOIN studio_accounts a ON a.id=s.user_id WHERE s.token_hash=$1 AND s.expires>$2 AND a.active=true AND s.version=a.session_version',hash(raw),now):null;
 if(!user)throw new AccountError(401,'请先使用手机号登录');
+refuseCrossOriginAdmin(req,action);
 if(action==='script-worker-config'){
 requireAdmin(user);if(req.method!=='POST')throw new AccountError(405,'请使用POST');
 await q('INSERT INTO studio_grok_accounts (id,label) VALUES ($1,$2) ON CONFLICT(label) DO NOTHING',randomUUID(),SCRIPT_HOST);

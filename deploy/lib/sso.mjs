@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-import {AccountError,hash,token,cookie,safeOrigin,moduleUrl} from './security.mjs';
+import {AccountError,hash,token,sessionToken,safeOrigin,moduleUrl} from './security.mjs';
 
 // Only applications owned by this studio can receive workbench identities.
 export const SSO_ORIGINS=new Set(['https://sunny-terra-drift-arch.grok.me','https://jubaopeng-v2.vercel.app','https://jubaopeng-white.vercel.app']);
@@ -26,7 +26,7 @@ export function createSsoHandler(query){return async req=>{try{
  let b;try{b=JSON.parse(raw)}catch{throw new AccountError(400,'请求格式错误')}
  if(action==='ticket'){
   safeOrigin(req);if(!valid(b.challenge))throw new AccountError(400,'登录校验无效');
-  const sessionHash=hash(cookie(req));
+  const sessionHash=hash(sessionToken(req));
   const u=(await query('SELECT a.* FROM studio_sessions s JOIN studio_accounts a ON a.id=s.user_id WHERE s.token_hash=$1 AND s.expires>$2 AND a.active=true AND s.version=a.session_version',[sessionHash,now]))[0];
   if(!u)throw new AccountError(401,'请先登录工作台');
   const m=await effectiveModule(query,u,b.module);

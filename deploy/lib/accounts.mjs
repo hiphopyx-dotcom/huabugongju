@@ -1,5 +1,5 @@
 import {providerUrl} from '../../public/studio/model-privacy.mjs';
-import {AccountError,phone,name,memberPassword,hashPassword,verifyPassword,requireAdmin,hash,token,cookie,safeOrigin,moduleUrl} from './security.mjs';
+import {AccountError,phone,name,memberPassword,hashPassword,verifyPassword,requireAdmin,hash,token,sessionToken,allowBearerOrigin,refuseCrossOriginAdmin,allowedOrigins,moduleUrl,BEARER_SESSION_MS,COOKIE_SESSION_MS,isCrossOrigin} from './security.mjs';
 import {randomUUID,timingSafeEqual} from 'node:crypto';
 import {SSO_ORIGINS,launchPage,PROJECT_IMPORT_ORIGIN,PROJECT_IMPORT_PATH,validImportNonce} from './sso.mjs';
 const json=(data,status=200,extra={})=>Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...extra}});
@@ -7,7 +7,10 @@ const cleanUser=u=>({id:u.id,name:u.name,phone:u.phone,role:u.role,...(u.role===
 async function read(req){const text=await req.text();if(text.length>16384)throw new AccountError(413,'请求过大');try{return JSON.parse(text)}catch{throw new AccountError(400,'请求格式错误')}}
 export function createAccountHandler(query,config={}){
 return async function handle(req){try{
-safeOrigin(req);const op=new URL(req.url).searchParams.get('action')||'me';const now=Date.now();
+const op=new URL(req.url).searchParams.get('action')||'me';const now=Date.now();
+if(op==='login'&&req.method==='POST'){const origin=req.headers.get('origin')||'';if(origin!==new URL(req.url).origin&&!allowedOrigins().has(origin))throw new AccountError(403,'请在当前网站内操作')}
+else allowBearerOrigin(req);
+refuseCrossOriginAdmin(req,op);
 const q=async(s,...p)=>query(s,p);const one=async(s,...p)=>(await q(s,...p))[0];
 const rate=async(key,max)=>{const row=await one('INSERT INTO studio_login_limits (key,attempts,until_ms) VALUES ($1,1,$2) ON CONFLICT(key) DO UPDATE SET attempts=CASE WHEN studio_login_limits.until_ms<$3 THEN 1 ELSE studio_login_limits.attempts+1 END, until_ms=CASE WHEN studio_login_limits.until_ms<$3 THEN $2 ELSE studio_login_limits.until_ms END RETURNING attempts',hash(key),now+15*60*1000,now);if(row.attempts>max)throw new AccountError(429,'尝试过多，请15分钟后再试')};
 if(op==='login'&&req.method==='POST'){
@@ -15,7 +18,10 @@ const b=await read(req),p=phone(b.phone);await rate('phone:'+p,10);await rate('i
 const u=await one('SELECT a.*,g.label AS grok_label FROM studio_accounts a LEFT JOIN studio_grok_accounts g ON g.id=a.grok_account_id AND g.active=true WHERE phone=$1',p);
 const dummy=config.dummyHash||await hashPassword('not-an-account-password');
 if(!await verifyPassword(b.password,u?.password_hash||dummy)||!u?.active)throw new AccountError(401,'手机号或密码错误，或账号已停用');
-const t=token();await q('INSERT INTO studio_sessions (token_hash,user_id,version,expires) VALUES ($1,$2,$3,$4)',hash(t),u.id,u.session_version,now+7*86400000);
+const t=token(),origin=req.headers.get('origin')||'',bearer=b.client==='bearer'&&isCrossOrigin(req)&&allowedOrigins().has(origin);
+if(bearer){await q('INSERT INTO studio_sessions (token_hash,user_id,version,expires) VALUES ($1,$2,$3,$4)',hash(t),u.id,u.session_version,now+BEARER_SESSION_MS);return json({user:cleanUser(u),token:t,expires:now+BEARER_SESSION_MS})}
+if(isCrossOrigin(req))throw new AccountError(403,'跨域登录需要正式版账号入口');
+await q('INSERT INTO studio_sessions (token_hash,user_id,version,expires) VALUES ($1,$2,$3,$4)',hash(t),u.id,u.session_version,now+COOKIE_SESSION_MS);
 return json({user:cleanUser(u)},200,{'Set-Cookie':`__Host-jbp-session=${t}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=604800`});
 }
 if(op==='bootstrap'&&req.method==='POST'){
@@ -23,7 +29,7 @@ await rate('bootstrap',5);const b=await read(req);const expected=hash(config.set
 if(await one("SELECT id FROM studio_accounts WHERE role='admin'"))throw new AccountError(409,'管理员已设置，不能重复初始化');
 const id=randomUUID();await q("INSERT INTO studio_accounts (id,phone,name,password_hash,role,created) VALUES ($1,$2,$3,$4,'admin',$5)",id,phone(b.phone),name(b.name),await hashPassword(b.password),now);const t=token();await q('INSERT INTO studio_sessions (token_hash,user_id,version,expires) VALUES ($1,$2,$3,$4)',hash(t),id,1,now+7*86400000);return json({created:true,user:{id,name:name(b.name),phone:phone(b.phone),role:'admin',grokAccount:null}},201,{'Set-Cookie':`__Host-jbp-session=${t}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=604800`});
 }
-const raw=cookie(req);const u=raw?await one('SELECT a.*,g.label AS grok_label FROM studio_sessions s JOIN studio_accounts a ON a.id=s.user_id LEFT JOIN studio_grok_accounts g ON g.id=a.grok_account_id AND g.active=true WHERE s.token_hash=$1 AND s.expires>$2 AND a.active=true AND s.version=a.session_version',hash(raw),now):null;
+const raw=sessionToken(req);const u=raw?await one('SELECT a.*,g.label AS grok_label FROM studio_sessions s JOIN studio_accounts a ON a.id=s.user_id LEFT JOIN studio_grok_accounts g ON g.id=a.grok_account_id AND g.active=true WHERE s.token_hash=$1 AND s.expires>$2 AND a.active=true AND s.version=a.session_version',hash(raw),now):null;
 if(op==='me'&&req.method==='GET')return json({user:u?cleanUser(u):null,configured:true,administratorConfigured:!!await one("SELECT id FROM studio_accounts WHERE role='admin'")});
 if(op==='logout'&&req.method==='POST'){if(raw)await q('DELETE FROM studio_sessions WHERE token_hash=$1',hash(raw));return json({loggedOut:true},200,{'Set-Cookie':'__Host-jbp-session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0'})}
 if((op==='modules'||op==='module-open')&&req.method==='GET'){

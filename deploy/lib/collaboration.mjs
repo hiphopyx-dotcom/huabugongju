@@ -1,13 +1,13 @@
 import {publicData} from '../../public/studio/model-privacy.mjs';
 import {randomUUID} from 'node:crypto';
-import {AccountError,hash,cookie,safeOrigin,phone} from './security.mjs';
+import {AccountError,hash,sessionToken,allowBearerOrigin,phone} from './security.mjs';
 import {apply,denormalize} from '../../public/studio/collab-core.mjs';
 import {validate} from '../../public/studio/core.mjs';
 const json=(data,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 const ID=/^[a-zA-Z0-9_-]{1,128}$/;
 const parse=v=>typeof v==='string'?JSON.parse(v):v;
 function validateDoc(doc){if(Buffer.byteLength(JSON.stringify(doc))>2000000)throw new AccountError(413,'协作工程上限2MB，请先减少工程内的大图片或视频');try{validate({...denormalize(doc),view:{x:0,y:0,zoom:1}})}catch(e){throw new AccountError(400,'工程无效：'+e.message)}return publicData(doc)}
-export function createCollaborationHandler(query){return async req=>{try{safeOrigin(req);const url=new URL(req.url),action=url.searchParams.get('action')||'rooms',now=Date.now();const q=(s,...p)=>query(s,p),one=async(s,...p)=>(await q(s,...p))[0];const raw=cookie(req),user=raw?await one('SELECT a.* FROM studio_sessions s JOIN studio_accounts a ON a.id=s.user_id WHERE s.token_hash=$1 AND s.expires>$2 AND a.active=true AND s.version=a.session_version',hash(raw),now):null;if(!user)throw new AccountError(401,'请先使用管理员分配的手机号登录');
+export function createCollaborationHandler(query){return async req=>{try{allowBearerOrigin(req);const url=new URL(req.url),action=url.searchParams.get('action')||'rooms',now=Date.now();const q=(s,...p)=>query(s,p),one=async(s,...p)=>(await q(s,...p))[0];const raw=sessionToken(req),user=raw?await one('SELECT a.* FROM studio_sessions s JOIN studio_accounts a ON a.id=s.user_id WHERE s.token_hash=$1 AND s.expires>$2 AND a.active=true AND s.version=a.session_version',hash(raw),now):null;if(!user)throw new AccountError(401,'请先使用管理员分配的手机号登录');
 let b={};if(req.method!=='GET'){const t=await req.text();if(Buffer.byteLength(t)>2200000)throw new AccountError(413,'协作请求过大');try{b=JSON.parse(t)}catch{throw new AccountError(400,'请求格式错误')}}
 if(action==='rooms'&&req.method==='GET')return json({rooms:await q("SELECT r.id,r.title,r.updated,CASE WHEN r.owner=$1 THEN 'owner' ELSE m.role END AS role FROM studio_collab_rooms r LEFT JOIN studio_collab_members m ON m.room_id=r.id AND m.user_id=$1 WHERE r.owner=$1 OR m.user_id=$1 ORDER BY r.updated DESC",user.id)});
 if(action==='rooms'&&req.method==='POST'){const id=randomUUID(),doc=validateDoc(b.document);await q('INSERT INTO studio_collab_rooms (id,owner,title,document,revision,updated) VALUES ($1,$2,$3,$4,0,$5)',id,user.id,String(denormalize(doc).title).slice(0,200),JSON.stringify(doc),now);return json({id,revision:0,document:doc,role:'owner'},201)}
