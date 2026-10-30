@@ -390,7 +390,7 @@ export function buildImageWorkshopPrompt(category, fields = {}) {
     if (field('worldAnchors')) parts.push(`固定空间锚点：${field('worldAnchors')}`);
     if (lock) parts.push('保持参考图墙体、门窗、家具的数量和位置，不镜像、不更换空间。');
   } else if (category === 'props') {
-    parts.push(`电影道具产品照：${name || '剧本指定道具'}。`, description, field('material') ? `材质、磨损与年代痕迹：${field('material')}。` : '', field('usedBy') ? `使用者：${field('usedBy')}。` : '', '将道具单独置于安静的摄影棚台面，突出可辨认的外形、比例和材质，不新增人物或品牌。');
+    parts.push(`电影道具产品照：${name || '剧本指定道具'}。`, '先分析材质、磨损、谁在用和叙事功能，再出这一张道具主图。', description, field('material') ? `材质、磨损与年代痕迹：${field('material')}。` : '', field('usedBy') ? `使用者：${field('usedBy')}。` : '', '将道具单独置于安静的摄影棚台面，突出可辨认的外形、比例和材质，不新增人物或品牌。');
     if (lock) parts.push('严格沿用参考图道具的外形、材质、颜色与设计语言。');
   } else {
     parts.push('单张电影分镜剧照，保留剧本原有动作与先后关系，不将不同时间的动作拼在同一画面。', field('scene') ? `场次：${field('scene')}` : '', field('action') ? `画面动作：${field('action')}` : description, field('characters') ? `画面人物：${field('characters')}；只出现所列人物，不增加群众。` : '人物依照剧本设定，未另行指定时采用中国 / 东亚面孔。', field('props') ? `道具：${field('props')}` : '', field('dialogue') ? `此刻说出的台词（只用于表演，不渲染文字）：${field('dialogue')}` : '', [field('shotSize'), field('composition'), field('cameraMove'), field('lighting'), field('technique')].filter(Boolean).join('；'));

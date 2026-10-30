@@ -14,6 +14,7 @@ import * as L from './shot-language.mjs?v=bd900549f538';
 import {insertBeatAfter, insertSceneAfter, moveSceneBlock, moveBeat, dragEnabled, ORDER_UNSAVED} from './storyboard-edit.mjs?v=port9';
 import {episodeAspectOf, setEpisodeAspect} from './frame-aspect.mjs?v=port9';
 import {charPackPath} from './jingben-pack.mjs?v=port9';
+import {hydrateAuthedImages} from './api-client.mjs?v=port9';
 import {mountPano} from './pano-viewer.mjs?v=port9';
 import {expectedViewRules, judgeViewQa, layoutFromText, shouldPersistViewStill, VIEW_QA_FAIL} from './scene-spec.mjs?v=port9';
 
@@ -164,6 +165,7 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
     if (cite && tab === 'script') focusSource();
     const still = preview?.kind==='pano' ? host.querySelector('.pc-large-image') : null;
     if (still && still.tagName === 'IMG') { const canvas=document.createElement('canvas'); canvas.width=640; canvas.height=320; canvas.className='pc-large-image'; still.replaceWith(canvas); mountPano(canvas, still.getAttribute('src')); }
+    void hydrateAuthedImages(host);
   }
   function shell(p, desk, tab) {
     const showRail = true;
