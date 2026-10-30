@@ -19,7 +19,7 @@ import * as Stage from './virtual-stage.mjs?v=bd900549f538';
 import * as LanguageWriting from './language-writing.mjs?v=bd900549f538';
 import * as ScriptWorkbench from './script-workbench.mjs?v=bd900549f538';
 import {createImageWorkshop,imageRequest} from './image-workshop.mjs?v=bd900549f538';
-import {createPianchangDesk} from './pianchang-desk.mjs?v=g4studio';
+import {createPianchangDesk} from './pianchang-desk.mjs?v=g5desk';
 import {scriptDocx,scriptDocxFilename} from './script-docx.mjs?v=bd900549f538';
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)],E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const projectSelection=createProjectSelection(localStorage);let projectScope='guest';
