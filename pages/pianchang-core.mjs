@@ -210,6 +210,17 @@ export function prepareStill(p,d,category,id,slot) {
         shot[field] = aid;
       }
     }
+    const sceneId = slot === 'reverse' ? (row.reverse_location || row.frame_location) : row.frame_location;
+    if (sceneId) {
+      const loc = d.locations.find(l => l.id === sceneId);
+      const choice = row.refChoices?.[sceneId] || 'view_n';
+      const ref = loc ? reference(p,d,loc.id,choice) : null;
+      if (ref) {
+        const aid = `ref-${loc.id}`;
+        if (!assets.some(a=>a.id === aid)) assets.push({id:aid,name:loc.name,kind:'image',src:slotImage(p,d,`${loc.id}:${choice}`).src});
+        shot.locations = [aid, ...(shot.locations || []).filter(id => id !== aid)];
+      }
+    }
     // Identity and scene references first. Existing shot output is not its own brief.
     const ordered = [...(shot.angle === '过肩镜头' ? [shot.otsFrom,shot.otsTo] : []),...(shot.characters || []),...(shot.locations || []),...(shot.props || [])];
     for (const aid of [...new Set(ordered)]) {
