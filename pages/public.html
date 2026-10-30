@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>公开片场</title>
+<style>body{font-family:sans-serif;margin:32px;line-height:1.5}img{max-width:240px}</style>
+</head>
+<body>
+<h1 id="title">公开片场</h1>
+<p id="status">正在读取…</p>
+<pre id="body"></pre>
+<script type="module">
+const id=new URLSearchParams(location.search).get('id');
+const status=document.querySelector('#status'), title=document.querySelector('#title'), body=document.querySelector('#body');
+if(!id){status.textContent='缺少公开编号';}
+else{
+  const r=await fetch('/api/publish?action=get&id='+encodeURIComponent(id));
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok){status.textContent=data.error||'看不到这部长片';}
+  else{title.textContent=data.item.title||'公开片场';status.textContent='未登录也可以看';body.textContent=JSON.stringify(data.item.payload,null,2)}
+}
+</script>
+</body>
+</html>

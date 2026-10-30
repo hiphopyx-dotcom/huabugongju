@@ -20,7 +20,7 @@ export const DEFAULT_CORS_ORIGIN='https://zinc-raven-rocket-drift.grok.me';
 const BEARER=/^Bearer ([A-Za-z0-9_-]{43})$/;
 export const BEARER_SESSION_MS=24*60*60*1000;
 export const COOKIE_SESSION_MS=7*86400000;
-export const CROSS_ORIGIN_ADMIN_ACTIONS=new Set(['grok-accounts','assign-grok','bootstrap','worker-config','worker-revoke','script-worker-config']);
+export const CROSS_ORIGIN_ADMIN_ACTIONS=new Set(['grok-accounts','assign-grok','bootstrap','worker-config','worker-revoke','script-worker-config','grant']);
 
 export function allowedOrigins(env=process.env){
   const raw=env.JBP_CORS_ORIGINS;

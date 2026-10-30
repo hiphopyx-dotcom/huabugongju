@@ -13,6 +13,7 @@ import {POSES,axisBlock,axisDistance,dummySVG} from './pianchang-axis.mjs';
 import * as L from './shot-language.mjs';
 import {insertBeatAfter, insertSceneAfter, moveSceneBlock, moveBeat, sceneCode, dragEnabled, ORDER_UNSAVED} from './storyboard-edit.mjs';
 import {episodeAspectOf, setEpisodeAspect} from './frame-aspect.mjs';
+import {charPackPath} from './jingben-pack.mjs';
 import {mountPano} from './pano-viewer.mjs';
 import {expectedViewRules, judgeViewQa, layoutFromText, shouldPersistViewStill, VIEW_QA_FAIL} from './scene-spec.mjs';
 
@@ -348,7 +349,7 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
   }
   async function extraAction(act,btn) {
     if(act==='pose'){commit(()=>{const b=d().beats.find(b=>b.id===btn.dataset.id);if(b){const block=axisBlock(b.ots_block);block[btn.dataset.who].pose=btn.dataset.pose;b.ots_block=JSON.stringify(block);syncShots(getProject(),d())}});return true;}
-    if(act==='download-entity'){const token=capture(),entity=entityOf(btn.dataset.batch,btn.dataset.id),entries=[];for(const slot of IMAGE_SLOTS[btn.dataset.batch] || []){const image=slotImage(getProject(),d(),`${entity.id}:${slot.id}`);if(!image.src)continue;const src=await imageData(image.src);if(!alive(token))return true;const mime=src.slice(5,src.indexOf(';')),bytes=Uint8Array.from(atob(src.split(',')[1]),c=>c.charCodeAt(0));entries.push([slot.label+'.'+(mime==='image/jpeg'?'jpg':mime==='image/webp'?'webp':'png'),bytes]);}if(!entries.length)throw Error('还没有可下载的图片');const url=URL.createObjectURL(new Blob([zipStore(entries)],{type:'application/zip'})),a=document.createElement('a');a.href=url;a.download=(entity.name || '参考图').replace(/[\\/:*?"<>|]/g,'_')+'.zip';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return true;}
+    if(act==='download-entity'){const token=capture(),entity=entityOf(btn.dataset.batch,btn.dataset.id),entries=[];for(const slot of IMAGE_SLOTS[btn.dataset.batch] || []){const image=slotImage(getProject(),d(),`${entity.id}:${slot.id}`);if(!image.src)continue;const src=await imageData(image.src);if(!alive(token))return true;const mime=src.slice(5,src.indexOf(';')),bytes=Uint8Array.from(atob(src.split(',')[1]),c=>c.charCodeAt(0));const ext=mime==='image/jpeg'?'jpg':mime==='image/webp'?'webp':'png';entries.push([btn.dataset.batch==='characters'?charPackPath(entity.name,slot.label,ext):slot.label+'.'+ext,bytes]);}if(!entries.length)throw Error('还没有可下载的图片');const url=URL.createObjectURL(new Blob([zipStore(entries)],{type:'application/zip'})),a=document.createElement('a');a.href=url;a.download=(entity.name || '参考图').replace(/[\\/:*?"<>|]/g,'_')+'.zip';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return true;}
     if(act==='delete-version' && historyView){const item=historyView.items.find(i=>i.id===btn.dataset.id),token=capture(),target={...historyView};if(!item)return true;if(item.adminLocked || slotImage(getProject(),d(),`${target.id}:${target.kind}`).locked)throw Error('管理员已锁定，不能删除');if(!confirm('删除这个历史版本？此操作不可恢复。'))return true;await request('delete',{id:item.id});if(!alive(token))return true;commit(()=>forgetImage({item,src:contentURL(item.id)}));await loadHistory(target,target.all,target.page);return true;}
     if (act === 'refresh') { await refresh(); return true; }
     if (act === 'guide') {

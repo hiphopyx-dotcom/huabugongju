@@ -50,6 +50,16 @@ try{const r=await (config.fetch||fetch)(origin+'/api/studio-sso?action=capabilit
 }
 return new Response(null,{status:302,headers:{Location:moduleUrl(m.url),'Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});
 }
+const grantRow=u?await one('SELECT grant_role FROM studio_account_grants WHERE user_id=$1',u.id):null;
+const subAdmin=grantRow?.grant_role==='sub-admin';
+if(op==='member-work'&&req.method==='GET'){
+  if(!u||(u.role!=='admin'&&!subAdmin))throw new AccountError(403,'仅管理员可查看成员出图');
+  const owner=new URL(req.url).searchParams.get('owner')||'';
+  if(!owner)throw new AccountError(400,'缺少成员');
+  return json({images:await q('SELECT id,name,project_id,project_title,asset_kind,created FROM studio_images WHERE owner=$1 ORDER BY created DESC LIMIT 60',owner)});
+}
+if(op==='users'&&req.method==='GET'&&subAdmin)return json({users:await q('SELECT a.id,a.phone,a.name,a.role,a.active,a.created FROM studio_accounts a ORDER BY a.created DESC'),subAdmin:true});
+if(subAdmin&&(op==='users'||op==='grant'))throw new AccountError(403,'二级管理员不能开通或移除成员');
 requireAdmin(u);
 const audit=async(action,target)=>q('INSERT INTO studio_account_audit (id,actor,action,target,created) VALUES ($1,$2,$3,$4,$5)',randomUUID(),u.id,action,target,now);
 if(op==='grok-open'&&req.method==='GET')return new Response(null,{status:302,headers:{Location:'https://grok.com/imagine','Cache-Control':'no-store'}});
@@ -76,6 +86,7 @@ const updated=await one("UPDATE studio_accounts SET grok_account_id=$1,session_v
 if(!updated)throw new AccountError(404,'成员账户不存在');
 await audit('assign-grok',id);return json({saved:true})}
 if(op==='modules'&&req.method==='PUT'){const b=await read(req);if(!['script','white','image','storyboard'].includes(b.id))throw new AccountError(400,'模型类型无效');await q('INSERT INTO studio_model_modules (id,name,url,updated) VALUES ($1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET name=excluded.name,url=excluded.url,updated=excluded.updated',b.id,name(b.name),moduleUrl(b.url),now);await audit('configure-module',b.id);return json({saved:true})}
+if(op==='grant'&&req.method==='POST'){const b=await read(req),id=String(b.userId||''),target=await one("SELECT id,role FROM studio_accounts WHERE id=$1",id);if(!target||target.role==='admin')throw new AccountError(404,'成员不存在');if(b.grant==='sub-admin')await q("INSERT INTO studio_account_grants (user_id,grant_role,created) VALUES ($1,'sub-admin',$2) ON CONFLICT(user_id) DO UPDATE SET grant_role='sub-admin'",id,now);else await q('DELETE FROM studio_account_grants WHERE user_id=$1',id);await audit('grant',id);return json({saved:true})}
 if(op==='users'&&req.method==='POST'){const b=await read(req),id=randomUUID(),p=phone(b.phone),n=name(b.name),pwd=memberPassword(b.password);if(await one('SELECT id FROM studio_accounts WHERE phone=$1',p))throw new AccountError(409,'手机号已存在，请在“已有账户”中编辑或重置密码');const grok=b.grokAccountId||null;if(grok&&!await one('SELECT id FROM studio_grok_accounts WHERE id=$1 AND active=true',grok))throw new AccountError(400,'请选择有效的 Grok 账户');const inserted=await one("INSERT INTO studio_accounts (id,phone,name,password_hash,role,grok_account_id,created) VALUES ($1,$2,$3,$4,'user',$5,$6) ON CONFLICT(phone) DO NOTHING RETURNING id",id,p,n,await hashPassword(pwd),grok,now);if(!inserted)throw new AccountError(409,'手机号已存在，请在“已有账户”中编辑或重置密码');await audit('create-user',id);return json({created:true},201)}
 if(op==='users'&&req.method==='PUT'){const b=await read(req),target=await one('SELECT * FROM studio_accounts WHERE id=$1',String(b.id));if(!target)throw new AccountError(404,'账户不存在');if(target.role==='admin')throw new AccountError(400,'此入口不能修改管理员');const grok=b.grokAccountId||null;if(grok&&!await one('SELECT id FROM studio_grok_accounts WHERE id=$1 AND active=true',grok))throw new AccountError(400,'请选择有效的 Grok 账户');const encoded=b.password?await hashPassword(memberPassword(b.password)):target.password_hash;await q('UPDATE studio_accounts SET name=$1,grok_account_id=$2,active=$3,password_hash=$4,session_version=session_version+1 WHERE id=$5',name(b.name),grok,b.active!==false,encoded,target.id);await audit('update-user',target.id);return json({saved:true})}
 throw new AccountError(404,'接口不存在');
