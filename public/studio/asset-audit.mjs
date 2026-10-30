@@ -1,8 +1,9 @@
+import {apiFetch} from './api-client.mjs';
 const E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let accountId=null,epoch=0,chain=Promise.resolve(),seen=new Map(),view=0,filters={owner:'',kind:'',search:'',page:1,trash:'0'};
 const labels={image:'图片',video:'视频',audio:'音频',text:'文字'};
 const status={queued:'排队中',running:'生成中',done:'已完成',failed:'失败'};
-async function api(action,body,params={}){const qs=new URLSearchParams({action,...params});const r=await fetch('/api/assets?'+qs,{method:body?'POST':'GET',credentials:'same-origin',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});let data;try{data=await r.json()}catch{throw Error('资产记录服务响应异常')}if(!r.ok)throw Error(data.error||'资产记录读取失败');return data;}
+async function api(action,body,params={}){const qs=new URLSearchParams({action,...params});const r=await apiFetch('/api/assets?'+qs,{method:body?'POST':'GET',credentials:'same-origin',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});let data;try{data=await r.json()}catch{throw Error('资产记录服务响应异常')}if(!r.ok)throw Error(data.error||'资产记录读取失败');return data;}
 let receiver=()=>{};
 export function setControlsReceiver(fn){receiver=fn}
 export async function refreshControls(project){if(!accountId)return;const id=accountId,version=epoch;const data=await api('controls',null,{projectId:project.id});if(id===accountId&&version===epoch)receiver(id,project.id,data.controls||[])}

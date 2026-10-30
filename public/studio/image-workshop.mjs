@@ -1,4 +1,5 @@
 import {IMAGE_WORKSHOP_CATEGORIES,readImageWorkshopArchive,selectImageWorkshopImport,buildImageWorkshopPrompt} from './image-workshop-core.mjs';
+import {apiFetch} from './api-client.mjs';
 import {memberError} from './model-privacy.mjs';
 import {resetQuota} from './quota.mjs';
 import {createImageWorkbench} from './image-workbench.mjs';
@@ -11,7 +12,7 @@ const kinds=['角色','场景','道具','分镜'];
 const ratios=['16:9','9:16','1:1','3:4','4:3'];
 const action=(label,key,attrs='',cls='')=>`<button type="button" data-image-action="${key}" ${attrs} class="${cls}">${label}</button>`;
 export async function imageRequest(action,body,params={}){
- const response=await fetch('/api/images?'+new URLSearchParams({action,...params}),{method:body?'POST':'GET',credentials:'same-origin',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});
+ const response=await apiFetch('/api/images?'+new URLSearchParams({action,...params}),{method:body?'POST':'GET',credentials:'same-origin',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});
  let data;try{data=await response.json()}catch{throw Error('图片服务响应中断，请刷新图库核对；不要重复提交生成')}
  if(!response.ok)throw Object.assign(Error(memberError(data.error||'图片请求未完成')),{rejected:response.status>=400&&response.status<500&&response.status!==408});return data;
 }

@@ -12,6 +12,7 @@
 
 # testing
 /coverage
+/bench-export
 
 # next.js
 /.next/

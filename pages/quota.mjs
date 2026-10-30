@@ -1,9 +1,10 @@
+import {apiFetch, apiBase, rememberToken, hydrateAuthedImages} from './api-client.mjs?v=port9';
 import {estimateText,estimateMedia,TEXT_OUTPUT_HOLD} from './token-estimate.mjs?v=bd900549f538';
 const E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const N=v=>v==null?'不限额':Number(v).toLocaleString('zh-CN');
 let viewer=null,cached=null,cacheTime=0,pending=null;
 export async function quotaApi(action,body,params={}){
- const r=await fetch('/api/quota?'+new URLSearchParams({action,...params}),{method:body?'POST':'GET',credentials:'same-origin',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});let data;try{data=await r.json()}catch{throw Error('额度服务响应异常')}if(!r.ok)throw Error(data.error||'额度操作失败');return data;
+ const r=await apiFetch('/api/quota?'+new URLSearchParams({action,...params}),{method:body?'POST':'GET',credentials:'same-origin',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});let data;try{data=await r.json()}catch{throw Error('额度服务响应异常')}if(!r.ok)throw Error(data.error||'额度操作失败');return data;
 }
 function show(html){const host=document.querySelector('#modalBody');host.innerHTML='<button data-act="close" class="modal-close">×</button>'+html;document.querySelector('#modal').style.display='flex';}
 const walletView=w=>`<p class="notice">可用 <strong>${N(w.available)}</strong> · 已消耗 ${N(w.used)} · 预占 ${N(w.held)} · 总额度 ${N(w.allowance)}<br><small>单位均为估算 token，属于站内计量，不代表模型真实账单。不限额账号仍记录消耗。</small></p>`;

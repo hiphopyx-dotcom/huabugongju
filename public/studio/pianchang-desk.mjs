@@ -14,6 +14,7 @@ import * as L from './shot-language.mjs';
 import {insertBeatAfter, insertSceneAfter, moveSceneBlock, moveBeat, sceneCode, dragEnabled, ORDER_UNSAVED} from './storyboard-edit.mjs';
 import {episodeAspectOf, setEpisodeAspect} from './frame-aspect.mjs';
 import {charPackPath} from './jingben-pack.mjs';
+import {hydrateAuthedImages} from './api-client.mjs';
 import {mountPano} from './pano-viewer.mjs';
 import {expectedViewRules, judgeViewQa, layoutFromText, shouldPersistViewStill, VIEW_QA_FAIL} from './scene-spec.mjs';
 
@@ -155,6 +156,7 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
     if (cite && tab === 'script') focusSource();
     const pano = host.querySelector('[data-pano]');
     if (pano) mountPano(pano, pano.dataset.pano);
+    void hydrateAuthedImages(host);
   }
   function shell(p, desk, tab) {
     const showRail = true;
