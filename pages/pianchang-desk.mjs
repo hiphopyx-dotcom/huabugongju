@@ -72,6 +72,15 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
   let mountedScope = '';
   const detailState = new Map();
   let dragging=null;
+
+  const fold = {q:{characters:'',locations:'',props:'',storyboard:''}, open:{characters:new Set(),locations:new Set(),props:new Set(),storyboard:new Set()}};
+  function sceneCode(text){const raw=String(text||'').trim();const m=raw.match(/(\d+)\s*[-–—]\s*(\d+)/);return m?`${m[1]}-${m[2]}`:(raw.split(/\s+/)[0]||'未标场号')}
+  function foldHit(kind,item){const q=fold.q[kind].trim().toLowerCase();if(!q)return true;const blob=kind==='characters'?[item.name,item.role,item.appearance]:kind==='props'?[item.name]:kind==='locations'?[item.name,item.heading,sceneCode(item.heading)]:[sceneCode(item.scene_heading),item.scene_heading,item.action,item.dialogue];return blob.filter(Boolean).join('\n').toLowerCase().includes(q)}
+  function findBar(kind,placeholder){return `<div class="pc-find"><input type="search" data-pc-find="${kind}" value="${E(fold.q[kind]||'')}" placeholder="${E(placeholder)}" aria-label="${E(placeholder)}"><button type="button" data-pc="fold-all" data-kind="${kind}">全部折叠</button><button type="button" data-pc="open-all" data-kind="${kind}">全部展开</button></div>`}
+  function foldCard(kind,id,name,body,note=''){const open=fold.open[kind].has(id);return `<li class="pc-card pc-fold-card"><button type="button" class="pc-fold" data-pc="toggle-fold" data-kind="${kind}" data-id="${E(id)}" aria-expanded="${open?'true':'false'}"><i class="pc-caret" data-open="${open?1:0}" aria-hidden="true"></i><span>${E(name||'未命名')}</span>${note?`<small class="pc-chip">${E(note)}</small>`:''}</button>${open?`<div class="pc-fold-body">${body}</div>`:''}</li>`}
+  function storyGroups(beats){const groups=[],index=new Map();for(const b of beats){const code=sceneCode(b.scene_heading);let g=index.get(code);if(!g){g={id:code,code,beats:[]};index.set(code,g);groups.push(g)}g.beats.push(b)}return groups}
+  function storyBoard(desk){const all=shownBeats(),rows=all.filter(b=>foldHit('storyboard',b)),groups=storyGroups(rows);return `<div class="pc-stack">${groups.map(g=>foldCard('storyboard',g.id,g.code,`<ol class="pc-stack">${g.beats.map(b=>beatCard(desk,b,all[all.indexOf(b)+1])).join('')}</ol>`,`${g.beats.length} 镜`)).join('')}</div>${all.length?(rows.length?'':'<p class="pc-empty">没有对上的分镜</p>'):'<p class="pc-empty">拆解后出现连续分镜。</p>'}`}
+
   function onPointerDown(e){const actor=e.target.closest('[data-pc-actor]');if(!actor || queue || !current())return;e.preventDefault();dragging={actor,who:actor.dataset.pcActor,id:actor.dataset.beat,pointer:e.pointerId};actor.setPointerCapture?.(e.pointerId);}
   function onPointerMove(e){if(!dragging || !current())return;const b=d().beats.find(b=>b.id===dragging.id),board=dragging.actor.closest('.pc-axis-board');if(!b||!board)return;const r=board.getBoundingClientRect();if(!r.width||!r.height)return;const block=axisBlock(b.ots_block);block[dragging.who].along=Math.min(92,Math.max(8,(e.clientX-r.left)/r.width*100));block[dragging.who].off=Math.min(32,Math.max(-28,(e.clientY-r.top)/r.height*100-50));b.ots_block=JSON.stringify(block);dragging.actor.style.left=block[dragging.who].along+'%';dragging.actor.style.top=(50+block[dragging.who].off)+'%';const label=board.parentElement.querySelector('[data-pc-distance]');if(label)label.textContent='间距约 '+axisDistance(block)+' 米';}
   function onPointerUp(){if(!dragging)return;dragging=null;commit(()=>syncShots(getProject(),d()));}
@@ -208,14 +217,14 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
     return 'characters';
   }
   function charactersPane(desk) {
-    const list = shown(desk.characters);
+    const list = shown(desk.characters), rows = list.filter(c => foldHit('characters', c));
     return `${batchBar('出本集人物', '一次打开一张。出完把图放回格子，再点下一张。已有的图不会覆盖。', 'batch-characters', !list.length)}
       <button type="button" class="pc-ghost" data-pc="add-char" ${queue ? 'disabled' : ''}>增加人物</button>
-      <ol class="pc-stack">${list.map(c => `<li class="pc-card"><div class="pc-row"><div><input class="pc-name" data-pc-entity="characters" data-id="${E(c.id)}" data-key="name" value="${E(c.name)}"><small class="pc-chip">${c.scope === 'series' ? '全剧' : '本集'}</small><p class="pc-muted">${E(c.role)} · ${E(c.age)} · ${E(c.gender)}</p></div><div class="pc-row">${scopeBtn('characters', c)}<button type="button" data-pc="download-entity" data-id="${E(c.id)}" data-batch="characters">下载这个人</button><button type="button" data-pc="batch-one" data-batch="characters" data-id="${E(c.id)}">${queue?.entityId === c.id ? '取消' : '出这个人'}</button><button type="button" data-pc="del-char" data-id="${E(c.id)}">删除</button></div></div>
+      ${findBar('characters','查找人物：名字、身份、外貌')}<ol class="pc-stack">${rows.map(c => foldCard('characters', c.id, c.name || '未命名', `<div class="pc-row"><div><input class="pc-name" data-pc-entity="characters" data-id="${E(c.id)}" data-key="name" value="${E(c.name)}"><small class="pc-chip">${c.scope === 'series' ? '全剧' : '本集'}</small><p class="pc-muted">${E(c.role)} · ${E(c.age)} · ${E(c.gender)}</p></div><div class="pc-row">${scopeBtn('characters', c)}<button type="button" data-pc="download-entity" data-id="${E(c.id)}" data-batch="characters">下载这个人</button><button type="button" data-pc="batch-one" data-batch="characters" data-id="${E(c.id)}">${queue?.entityId === c.id ? '取消' : '出这个人'}</button><button type="button" data-pc="del-char" data-id="${E(c.id)}">删除</button></div></div>
         <details class="pc-bio" data-pc-detail="bio:${E(c.id)}"><summary>小传提示词 · 出图会用到</summary><div class="pc-grid3"><label>身份<input data-pc-entity="characters" data-id="${E(c.id)}" data-key="role" value="${E(c.role || '')}"></label><label>年龄<input data-pc-entity="characters" data-id="${E(c.id)}" data-key="age" value="${E(c.age || '')}"></label><label>性别<input data-pc-entity="characters" data-id="${E(c.id)}" data-key="gender" value="${E(c.gender || '')}"></label></div><label>外貌<textarea data-pc-entity="characters" data-id="${E(c.id)}" data-key="appearance" rows="3">${E(c.appearance || '')}</textarea></label><label>服装<textarea data-pc-entity="characters" data-id="${E(c.id)}" data-key="costume" rows="2">${E(c.costume || '')}</textarea></label>${gradeBox(c.id)}</details>
         <p class="pc-kicker">三视图 · 各一张</p><div class="pc-grid3">${VIEWS.map(v => still(c.id, v.kind, v.label, v.aspect)).join('')}</div>
-        <p class="pc-kicker">八种表情 · 单人面部特写</p><div class="pc-grid8">${EXPRS.map(v => still(c.id, v.kind, v.label, v.aspect)).join('')}</div></li>`).join('')}</ol>
-      ${list.length ? '' : '<p class="pc-empty">拆解后出现人物，也可以点上面的增加人物。</p>'}${fuseBox()}`;
+        <p class="pc-kicker">八种表情 · 单人面部特写</p><div class="pc-grid8">${EXPRS.map(v => still(c.id, v.kind, v.label, v.aspect)).join('')}</div>`)).join('')}</ol>
+      ${list.length ? (rows.length ? '' : '<p class="pc-empty">没有对上的人物</p>') : '<p class="pc-empty">拆解后出现人物，也可以点上面的增加人物。</p>'}${fuseBox()}`;
   }
   function gradeBox(id) {
     const g = d().grades[id] || {};
@@ -223,26 +232,26 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
     return `<details class="pc-grade"><summary>人物质感与表演</summary><div class="pc-grid3">${groups.map(group => `<label>${group.label}<select data-pc-grade="${group.key}" data-id="${E(id)}">${group.options.map(([v, label]) => `<option value="${v}" ${g[group.key] === v ? 'selected' : ''}>${label}</option>`).join('')}</select></label>`).join('')}</div></details>`;
   }
   function locationsPane(desk) {
-    const list = shown(desk.locations);
+    const list = shown(desk.locations), rows = list.filter(l => foldHit('locations', l));
     return `${batchBar('出本集场景', '一次打开一张。先出俯视，再出北机位。出完把图放回来。', 'batch-locations', !list.length)}
-      <ol class="pc-stack">${list.map(l => `<li class="pc-card"><div class="pc-row"><div><input class="pc-name" data-pc-entity="locations" data-id="${E(l.id)}" data-key="name" value="${E(l.name)}"><small class="pc-chip">${l.scope === 'series' ? '全剧' : '本集'}</small><p class="pc-muted">${E(l.heading || '')}</p><label>空间描述<textarea data-pc-entity="locations" data-id="${E(l.id)}" data-key="description">${E(l.description || '')}</textarea></label><p class="pc-kicker">俯视：上北下南 · 左西右东。先出俯视白模，四向只从这张图的四边拍。</p></div><div class="pc-row">${scopeBtn('locations', l)}<button type="button" data-pc="download-entity" data-id="${E(l.id)}" data-batch="locations">下载这个场景</button><button type="button" data-pc="batch-one" data-batch="locations" data-id="${E(l.id)}">${queue?.entityId === l.id ? '取消' : '出这个场景'}</button></div></div>
+      ${findBar('locations','查找场景：名字、场次')}<ol class="pc-stack">${rows.map(l => foldCard('locations', l.id, l.name || '未命名', `<div class="pc-row"><div><input class="pc-name" data-pc-entity="locations" data-id="${E(l.id)}" data-key="name" value="${E(l.name)}"><small class="pc-chip">${l.scope === 'series' ? '全剧' : '本集'}</small><p class="pc-muted">${E(l.heading || '')}</p><label>空间描述<textarea data-pc-entity="locations" data-id="${E(l.id)}" data-key="description">${E(l.description || '')}</textarea></label><p class="pc-kicker">俯视：上北下南 · 左西右东。先出俯视白模，四向只从这张图的四边拍。</p></div><div class="pc-row">${scopeBtn('locations', l)}<button type="button" data-pc="download-entity" data-id="${E(l.id)}" data-batch="locations">下载这个场景</button><button type="button" data-pc="batch-one" data-batch="locations" data-id="${E(l.id)}">${queue?.entityId === l.id ? '取消' : '出这个场景'}</button></div></div>
         <div class="pc-grid3">${[['time_of_day','时间'],['weather','天气'],['atmosphere','氛围'],['world_anchors','空间锚点 / 门窗家具方位']].map(([key,label])=>`<label>${label}<textarea data-pc-entity="locations" data-id="${E(l.id)}" data-key="${key}" rows="2">${E(l[key] || '')}</textarea></label>`).join('')}</div>
         <div class="pc-picks">${pick('locations' , l.id, 'shot_size', '景别', L.SHOT_SIZES, l.shot_size || '全景')}${pick('locations', l.id, 'composition', '机位', L.ANGLES, l.composition || '眼睛平视')}${pick('locations', l.id, 'camera_move', '运镜', L.CAMERA_MOVES, l.camera_move || '固定镜头')}${pick('locations', l.id, 'lighting', '光影', L.LIGHTINGS, l.lighting || '自然光')}</div>
-        <div class="pc-cross"><span></span>${still(l.id,'view_n','北机位', slotAspect('locations','view_n'))}<span></span>${still(l.id,'view_w','西机位', slotAspect('locations','view_w'))}${still(l.id,'plan','俯视白模','1:1')}${still(l.id,'view_e','东机位', slotAspect('locations','view_e'))}<span></span>${still(l.id,'view_s','南机位', slotAspect('locations','view_s'))}<span></span></div></li>`).join('')}</ol>
-      ${list.length ? '' : '<p class="pc-empty">拆解后出现场景。</p>'}${fuseBox()}`;
+        <div class="pc-cross"><span></span>${still(l.id,'view_n','北机位', slotAspect('locations','view_n'))}<span></span>${still(l.id,'view_w','西机位', slotAspect('locations','view_w'))}${still(l.id,'plan','俯视白模','1:1')}${still(l.id,'view_e','东机位', slotAspect('locations','view_e'))}<span></span>${still(l.id,'view_s','南机位', slotAspect('locations','view_s'))}<span></span></div>`)).join('')}</ol>
+      ${list.length ? (rows.length ? '' : '<p class="pc-empty">没有对上的场景</p>') : '<p class="pc-empty">拆解后出现场景。</p>'}${fuseBox()}`;
   }
   function propsPane(desk) {
-    const list = shown(desk.props);
+    const list = shown(desk.props), rows = list.filter(item => foldHit('props', item));
     return `${batchBar('出本集道具', '一次打开一张。出完把图放回格子。已有的图不会覆盖。', 'batch-props', !list.length)}
-      <ol class="pc-stack">${list.map(item => `<li class="pc-card"><div class="pc-row"><div><input class="pc-name" data-pc-entity="props" data-id="${E(item.id)}" data-key="name" value="${E(item.name)}"><small class="pc-chip">${item.scope === 'series' ? '全剧' : '本集'}</small><label>道具描述<textarea data-pc-entity="props" data-id="${E(item.id)}" data-key="description">${E(item.description || '')}</textarea></label></div>${scopeBtn('props', item)}</div><div class="pc-prop">${still(item.id,'hero','道具主图','1:1')}</div>
-        <div class="pc-grid3"><label>材质 / 磨损<textarea data-pc-entity="props" data-id="${E(item.id)}" data-key="material" rows="2">${E(item.material || '')}</textarea></label><label>谁在用<input data-pc-entity="props" data-id="${E(item.id)}" data-key="used_by" value="${E(item.used_by || '')}"></label><label>叙事功能<textarea data-pc-entity="props" data-id="${E(item.id)}" data-key="significance" rows="2">${E(item.significance || '')}</textarea></label></div></li>`).join('')}</ol>
-      ${list.length ? '' : '<p class="pc-empty">拆解后出现道具。</p>'}${fuseBox()}`;
+      ${findBar('props','查找道具：名字')}<ol class="pc-stack">${rows.map(item => foldCard('props', item.id, item.name || '未命名', `<div class="pc-row"><div><input class="pc-name" data-pc-entity="props" data-id="${E(item.id)}" data-key="name" value="${E(item.name)}"><small class="pc-chip">${item.scope === 'series' ? '全剧' : '本集'}</small><label>道具描述<textarea data-pc-entity="props" data-id="${E(item.id)}" data-key="description">${E(item.description || '')}</textarea></label></div>${scopeBtn('props', item)}</div><div class="pc-prop">${still(item.id,'hero','道具主图','1:1')}</div>
+        <div class="pc-grid3"><label>材质 / 磨损<textarea data-pc-entity="props" data-id="${E(item.id)}" data-key="material" rows="2">${E(item.material || '')}</textarea></label><label>谁在用<input data-pc-entity="props" data-id="${E(item.id)}" data-key="used_by" value="${E(item.used_by || '')}"></label><label>叙事功能<textarea data-pc-entity="props" data-id="${E(item.id)}" data-key="significance" rows="2">${E(item.significance || '')}</textarea></label></div>`)).join('')}</ol>
+      ${list.length ? (rows.length ? '' : '<p class="pc-empty">没有对上的道具</p>') : '<p class="pc-empty">拆解后出现道具。</p>'}${fuseBox()}`;
   }
   function storyPane(desk) {
     return `${batchBar('按参考出本集分镜', '一次打开一张。出完把图放回格子。已有的图不会覆盖。', 'batch-storyboard', !shownBeats().length)}
-      <ol class="pc-stack">${shownBeats().map((b, i, all) => beatCard(desk, b, all[i + 1])).join('')}</ol>
+      ${findBar('storyboard','查找场号、动作、对白')}${storyBoard(desk)}
       <button type="button" class="pc-ghost" data-pc="add-beat">插入一段</button><details class="pc-card"><summary>归档分镜 · ${desk.archivedShots.filter(b=>b.episode === desk.episode).length} 镜</summary><p class="pc-muted">原文改动后未匹配的旧镜头保存在这里，旧图仍可查看。</p>${desk.archivedShots.filter(b=>b.episode === desk.episode).map(b=>`<p>${E(b.scene_heading)} · ${E((b.action || b.dialogue || '').slice(0,100))}<button type="button" data-pc="restore-beat" data-id="${E(b.id)}">恢复这镜</button></p>`).join('')}</details>
-      ${shownBeats().length ? '' : '<p class="pc-empty">拆解后出现连续分镜。</p>'}${fuseBox()}`;
+      ${fuseBox()}`;
   }
   function beatCard(desk, b, next) {
     const ots = (b.composition || '') === '过肩镜头';
@@ -550,6 +559,7 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
   }
   function onInput(e) {
     const el = e.target;
+    if (el.dataset.pcFind) {const kind=el.dataset.pcFind,pos=el.selectionStart;fold.q[kind]=el.value;paint();const next=host.querySelector(`[data-pc-find="${kind}"]`);if(next){next.focus();try{next.setSelectionRange(pos,pos)}catch{}}return;}
     if (!current() || queue) return;
     if (el.hasAttribute('data-pc-edit') && preview) { preview.edit=el.value; return; }
     if (el.dataset.pcField === 'script') {
@@ -664,6 +674,9 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
       toast(`已加上${title}，把这一集的剧本贴在标题下面再拆解`);
       return;
     }
+    if (act === 'toggle-fold') {const set=fold.open[btn.dataset.kind];if(set.has(btn.dataset.id))set.delete(btn.dataset.id);else set.add(btn.dataset.id);paint();return;}
+    if (act === 'fold-all') {fold.open[btn.dataset.kind].clear();paint();return;}
+    if (act === 'open-all') {const kind=btn.dataset.kind;fold.open[kind]=new Set([...host.querySelectorAll(`[data-pc="toggle-fold"][data-kind="${kind}"]`)].map(el=>el.dataset.id));paint();return;}
     if (act === 'import') { host.querySelector('[data-pc-file]')?.click(); return; }
     if (act === 'sample') { commit(() => { const p = getProject(); if(p.script)(d().scriptHistory ||= []).push({text:p.script,created:Date.now()}); p.script = SAMPLE;d().scriptDrafts={};d().scriptAll=false; if (!p.title || p.title === '未命名项目') p.title = '夜渡'; }); toast('已填入《夜渡》'); return; }
     if (act === 'parse') { parse(); return; }
