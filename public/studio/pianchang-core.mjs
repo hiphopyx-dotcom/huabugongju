@@ -4,6 +4,7 @@ import {breakScript, preferScriptBody, episodeKey} from './pianchang-parse.mjs';
 import {deriveImageEntities, buildWorkflowPrompt, IMAGE_SLOTS} from './image-workflow.mjs';
 import {shotsFromBreak} from './script-breakdown.mjs';
 import {groups as languageGroups} from './storyboard.mjs';
+import {episodeAspectOf} from './frame-aspect.mjs';
 
 export const escapeHTML = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function imageURL(src) {
@@ -50,12 +51,13 @@ function canonicalEpisode(p,value) {
   if(!name || name==='本集' || name==='未分集')return episodes[0].name;
   return episodes.find(e=>episodeKey(e.name)===episodeKey(name))?.name || name.match(/第\s*[零〇一二两三四五六七八九十百０-９\d]+\s*集/)?.[0].replace(/\s/g,'') || name;
 }
-const beatFields = {scene:'scene_heading',description:'action',dialogue:'dialogue',duration:'duration_sec',nextGap:'next_gap_sec',startSec:'start_sec',size:'shot_size',angle:'composition',framing:'framing',camera:'camera_move',stylize:'stylize',lighting:'lighting',technique:'technique',sourceText:'script_excerpt',otsBlock:'ots_block',assetId:'frameAssetId',reverseAssetId:'reverseAssetId',continuity:'continuity'};
+const beatFields = {scene:'scene_heading',description:'action',dialogue:'dialogue',duration:'duration_sec',nextGap:'next_gap_sec',startSec:'start_sec',size:'shot_size',angle:'composition',framing:'framing',camera:'camera_move',stylize:'stylize',lighting:'lighting',technique:'technique',sourceText:'script_excerpt',otsBlock:'ots_block',assetId:'frameAssetId',reverseAssetId:'reverseAssetId',continuity:'continuity',ratio:'ratio'};
 const signature = s => JSON.stringify([episodeKey(s.episode || '第一集'),s.scene || s.scene_heading || '',s.sourceText || s.script_excerpt || '']);
 const snapshot = p => JSON.stringify(p.shots || []);
 export function ensureDesk(p, uid) {
   p.assets ||= []; p.shots ||= []; p.settings ||= {};
   const d = p.pianchang ||= {v:1,tab:'script',aspect:p.settings.ratio || '16:9',resolution:'1k',look:p.imageWorkspace?.style || 'cinematic',forceChar:false,scope:'all'};
+  d.episodeAspects ||= {};
   for (const k of [...groups,'beats','archivedShots']) d[k] ||= [];
   for (const k of ['stills','history','grades','images','slotRefs','slotGrades','prompts','pending']) d[k] ||= {};
   if (Array.isArray(d.fuse)) d.fuse = {characters:d.fuse,locations:[],props:[],storyboard:[]};
@@ -227,6 +229,6 @@ export function prepareStill(p,d,category,id,slot) {
   if (refs.length > 3) throw Error('自动参考与额外参考合计最多3张，请减少额外参考');
   for (const r of refs) if (r.dataUrl?.length > 1048700) throw Error('参考图请压缩到768KB以内');
   view={...view,settings:{...view.settings,storyStyle:[view.settings.storyStyle,d.episodeStyles?.[canonical.episode]].filter(Boolean).join('；')}};
-  const made = buildWorkflowPrompt(view,canonical,slot,{style:d.look,portraitStyle:{...(d.grades[id] || {}),...Object.fromEntries(Object.entries(d.slotGrades[key] || {}).filter(([,v])=>v))},aspect:d.aspect,forceAspect:d.forceChar,referenceCount:refs.length});
+  const made = buildWorkflowPrompt(view,canonical,slot,{style:d.look,portraitStyle:{...(d.grades[id] || {}),...Object.fromEntries(Object.entries(d.slotGrades[key] || {}).filter(([,v])=>v))},aspect:episodeAspectOf(d),forceAspect:d.forceChar,referenceCount:refs.length});
   return {name:`${canonical.name} · ${IMAGE_SLOTS[category].find(s=>s.id === slot).label}`.slice(0,120),kind:{characters:'角色',locations:'场景',props:'道具',storyboard:'分镜'}[category],prompt:made.prompt,ratio:made.aspect,resolution:d.resolution,references:refs,metadata:{entityId:id,entityName:canonical.name.slice(0,160),slot,episode:canonical.episode.slice(0,64)}};
 }
