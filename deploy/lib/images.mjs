@@ -1,5 +1,5 @@
 import {randomUUID as uuid} from 'node:crypto';
-import {AccountError,cookie,hash,safeOrigin} from './security.mjs';
+import {AccountError,hash,sessionToken,allowBearerOrigin} from './security.mjs';
 import {createQuotaService} from './quota.mjs';
 import {createImageWorkerService} from './image-worker.mjs';
 
@@ -158,10 +158,10 @@ export function createImageHandler(query,config={}){
  };
  return async req=>{
   try{
-   safeOrigin(req);const currentTime=now(),url=new URL(req.url),action=url.searchParams.get('action')||'status';
+   allowBearerOrigin(req);const currentTime=now(),url=new URL(req.url),action=url.searchParams.get('action')||'status';
    const allowed=['list','history'].includes(action)?['action','page','pageSize','projectId','kind','entityId','slot','episode','q']:action==='slots'?['action','projectId','entityId']:action==='workspace'&&req.method==='GET'?['action','projectId']:action==='job'?['action','id']:action==='content'?['action','id','download']:['action'];if([...url.searchParams.keys()].some(k=>!allowed.includes(k)))fail('请求字段无效');
    if(!['GET','POST'].includes(req.method))fail('请求方式无效',405);
-   const raw=cookie(req),sessionHash=raw?hash(raw):'',user=raw?await one('SELECT a.* FROM studio_sessions s JOIN studio_accounts a ON a.id=s.user_id WHERE s.token_hash=$1 AND s.expires>$2 AND a.active=true AND s.version=a.session_version',sessionHash,currentTime):null;
+   const raw=sessionToken(req),sessionHash=raw?hash(raw):'',user=raw?await one('SELECT a.* FROM studio_sessions s JOIN studio_accounts a ON a.id=s.user_id WHERE s.token_hash=$1 AND s.expires>$2 AND a.active=true AND s.version=a.session_version',sessionHash,currentTime):null;
    if(!user)fail('请先登录',401);
    if(req.method==='GET'){
     if(action==='status')return json({...(await useMac()?await worker.status():{configured}),capabilities:{kinds:KINDS,ratios:RATIOS,resolutions:RESOLUTIONS,...IMAGE_LIMITS},wallet:await quota.summary(user.id),rates:await quota.rates(),jobs:await jobs(user.id)});

@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto';
-import {AccountError,hash,cookie,safeOrigin,requireAdmin} from './security.mjs';
+import {AccountError,hash,sessionToken,allowBearerOrigin,requireAdmin} from './security.mjs';
 import {estimateText,estimateMedia,TEXT_OUTPUT_HOLD} from '../../public/studio/token-estimate.mjs';
 const number=(v,max=1e12)=>{if(!Number.isSafeInteger(v)||v<0||v>max)throw new AccountError(400,'请输入有效的非负整数');return v};
 export function createQuotaService(query){
@@ -19,8 +19,8 @@ export function createQuotaService(query){
  return {q,one,change,reconcile,summary,rates,submitText};
 }
 export function createQuotaHandler(query,config={}){const service=createQuotaService(query),{q,one,change,summary,rates}=service;return async req=>{try{
- safeOrigin(req);const now=config.now?.()??Date.now(),url=new URL(req.url),action=url.searchParams.get('action')||'status';
- const raw=cookie(req),user=raw?await one('SELECT a.* FROM studio_sessions s JOIN studio_accounts a ON a.id=s.user_id WHERE s.token_hash=$1 AND s.expires>$2 AND a.active=true AND s.version=a.session_version',hash(raw),now):null;
+ allowBearerOrigin(req);const now=config.now?.()??Date.now(),url=new URL(req.url),action=url.searchParams.get('action')||'status';
+ const raw=sessionToken(req),user=raw?await one('SELECT a.* FROM studio_sessions s JOIN studio_accounts a ON a.id=s.user_id WHERE s.token_hash=$1 AND s.expires>$2 AND a.active=true AND s.version=a.session_version',hash(raw),now):null;
  if(!user)throw new AccountError(401,'请先登录');
  let body={};if(req.method==='POST'){const text=await req.text();if(Buffer.byteLength(text)>20000)throw new AccountError(413,'请求过大');try{body=JSON.parse(text)}catch{throw new AccountError(400,'请求格式错误')}if(!body||typeof body!=='object'||Array.isArray(body))throw new AccountError(400,'请求格式错误')}
  const owner=String((req.method==='GET'?url.searchParams.get('owner'):body.owner)||user.id);if(owner!==user.id)requireAdmin(user);

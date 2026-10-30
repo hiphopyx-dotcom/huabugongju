@@ -1,14 +1,14 @@
 import {randomUUID} from 'node:crypto';
-import {AccountError,hash,cookie,safeOrigin,requireAdmin} from './security.mjs';
+import {AccountError,hash,sessionToken,allowBearerOrigin,requireAdmin} from './security.mjs';
 const json=(data,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 function text(value,max,label){if(typeof value!=='string'||value.length>max)throw new AccountError(400,label+'无效');return value;}
 function identifier(value){if(typeof value!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(value))throw new AccountError(400,'记录标识无效');return value;}
 function mediaUrl(value){if(!value)return '';let u;try{u=new URL(value)}catch{throw new AccountError(400,'媒体地址无效')}
  if(u.protocol!=='https:'||u.username||u.password||u.hostname==='localhost'||/^[\d.]+$/.test(u.hostname)||u.hostname.includes(':')||u.hostname.endsWith('.local')||value.length>4096)throw new AccountError(400,'媒体地址无效');return u.href;}
 export function createAssetHandler(query){return async req=>{try{
- safeOrigin(req);const url=new URL(req.url),action=url.searchParams.get('action')||'list',now=Date.now();
+ allowBearerOrigin(req);const url=new URL(req.url),action=url.searchParams.get('action')||'list',now=Date.now();
  const q=(sql,...params)=>query(sql,params),one=async(sql,...params)=>(await q(sql,...params))[0];
- const raw=cookie(req),user=raw?await one('SELECT a.* FROM studio_sessions s JOIN studio_accounts a ON a.id=s.user_id WHERE s.token_hash=$1 AND s.expires>$2 AND a.active=true AND s.version=a.session_version',hash(raw),now):null;
+ const raw=sessionToken(req),user=raw?await one('SELECT a.* FROM studio_sessions s JOIN studio_accounts a ON a.id=s.user_id WHERE s.token_hash=$1 AND s.expires>$2 AND a.active=true AND s.version=a.session_version',hash(raw),now):null;
  if(!user)throw new AccountError(401,'请先使用手机号登录');
  const controls=project=>q('SELECT asset_id AS id,name,prompt,admin_locked,admin_deleted,admin_revision FROM studio_asset_records WHERE owner=$1 AND (project_id=$2 OR EXISTS (SELECT 1 FROM studio_images i WHERE i.owner=studio_asset_records.owner AND i.id=studio_asset_records.asset_id AND i.project_id=studio_asset_records.project_id)) AND admin_revision>0',user.id,project);
  if(action==='controls'){if(req.method!=='GET')throw new AccountError(405,'请使用 GET');return json({controls:await controls(identifier(url.searchParams.get('projectId')))})}
