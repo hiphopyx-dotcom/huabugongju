@@ -199,7 +199,7 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
     const ratio = slotAspect(batchOf(kind),kind).replace(':',' / '), pending = d().pending[key];
     const attrs = `data-id="${E(entityId)}" data-kind="${E(kind)}" data-batch="${batchOf(kind)}"`;
     return `<figure class="pc-still"><button type="button" class="pc-frame" style="aspect-ratio:${ratio}" data-pc="view" ${attrs} ${image.src ? '' : 'disabled'} aria-label="查看${E(label)}">${image.src ? `<img src="${E(image.src)}" alt="${E(label)}" loading="lazy">` : `<span>${busy ? '正在出…' : pending ? '结果待核对' : '待出'}</span>`}</button><figcaption>${E(label)}${image.locked ? ' · 已锁定' : ''}</figcaption>
-      <div class="pc-still-actions"><button type="button" data-pc="one" ${attrs} ${queue || pending || image.locked ? 'disabled' : ''}>${image.src ? '再用 Grok' : '打开 Grok'}</button><button type="button" data-pc="slot" ${attrs}>${image.src ? '查看 / 改图' : '参考 / 提示词'}</button></div></figure>`;
+      <div class="pc-still-actions"><button type="button" data-pc="one" ${attrs} ${queue || pending || image.locked ? 'disabled' : ''}>${image.src ? '再出一张' : '出图'}</button><button type="button" data-pc="slot" ${attrs}>${image.src ? '查看 / 改图' : '参考 / 提示词'}</button></div></figure>`;
   }
   function batchOf(kind) {
     if (kind === 'hero') return 'props';
@@ -209,7 +209,7 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
   }
   function charactersPane(desk) {
     const list = shown(desk.characters);
-    return `${batchBar('出本集人物', '一次打开一张。用你的 Grok 额度出完，把图放回格子，再点下一张。已有的图不会覆盖。', 'batch-characters', !list.length)}
+    return `${batchBar('出本集人物', '一次打开一张。出完把图放回格子，再点下一张。已有的图不会覆盖。', 'batch-characters', !list.length)}
       <button type="button" class="pc-ghost" data-pc="add-char" ${queue ? 'disabled' : ''}>增加人物</button>
       <ol class="pc-stack">${list.map(c => `<li class="pc-card"><div class="pc-row"><div><input class="pc-name" data-pc-entity="characters" data-id="${E(c.id)}" data-key="name" value="${E(c.name)}"><small class="pc-chip">${c.scope === 'series' ? '全剧' : '本集'}</small><p class="pc-muted">${E(c.role)} · ${E(c.age)} · ${E(c.gender)}</p></div><div class="pc-row">${scopeBtn('characters', c)}<button type="button" data-pc="download-entity" data-id="${E(c.id)}" data-batch="characters">下载这个人</button><button type="button" data-pc="batch-one" data-batch="characters" data-id="${E(c.id)}">${queue?.entityId === c.id ? '取消' : '出这个人'}</button><button type="button" data-pc="del-char" data-id="${E(c.id)}">删除</button></div></div>
         <details class="pc-bio" data-pc-detail="bio:${E(c.id)}"><summary>小传提示词 · 出图会用到</summary><div class="pc-grid3"><label>身份<input data-pc-entity="characters" data-id="${E(c.id)}" data-key="role" value="${E(c.role || '')}"></label><label>年龄<input data-pc-entity="characters" data-id="${E(c.id)}" data-key="age" value="${E(c.age || '')}"></label><label>性别<input data-pc-entity="characters" data-id="${E(c.id)}" data-key="gender" value="${E(c.gender || '')}"></label></div><label>外貌<textarea data-pc-entity="characters" data-id="${E(c.id)}" data-key="appearance" rows="3">${E(c.appearance || '')}</textarea></label><label>服装<textarea data-pc-entity="characters" data-id="${E(c.id)}" data-key="costume" rows="2">${E(c.costume || '')}</textarea></label>${gradeBox(c.id)}</details>
@@ -224,7 +224,7 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
   }
   function locationsPane(desk) {
     const list = shown(desk.locations);
-    return `${batchBar('出本集场景', '一次打开一张。先出俯视，再出北机位。用你的 Grok 额度，出完把图放回来。', 'batch-locations', !list.length)}
+    return `${batchBar('出本集场景', '一次打开一张。先出俯视，再出北机位。出完把图放回来。', 'batch-locations', !list.length)}
       <ol class="pc-stack">${list.map(l => `<li class="pc-card"><div class="pc-row"><div><input class="pc-name" data-pc-entity="locations" data-id="${E(l.id)}" data-key="name" value="${E(l.name)}"><small class="pc-chip">${l.scope === 'series' ? '全剧' : '本集'}</small><p class="pc-muted">${E(l.heading || '')}</p><label>空间描述<textarea data-pc-entity="locations" data-id="${E(l.id)}" data-key="description">${E(l.description || '')}</textarea></label><p class="pc-kicker">俯视：上北下南 · 左西右东。先出俯视白模，四向只从这张图的四边拍。</p></div><div class="pc-row">${scopeBtn('locations', l)}<button type="button" data-pc="download-entity" data-id="${E(l.id)}" data-batch="locations">下载这个场景</button><button type="button" data-pc="batch-one" data-batch="locations" data-id="${E(l.id)}">${queue?.entityId === l.id ? '取消' : '出这个场景'}</button></div></div>
         <div class="pc-grid3">${[['time_of_day','时间'],['weather','天气'],['atmosphere','氛围'],['world_anchors','空间锚点 / 门窗家具方位']].map(([key,label])=>`<label>${label}<textarea data-pc-entity="locations" data-id="${E(l.id)}" data-key="${key}" rows="2">${E(l[key] || '')}</textarea></label>`).join('')}</div>
         <div class="pc-picks">${pick('locations' , l.id, 'shot_size', '景别', L.SHOT_SIZES, l.shot_size || '全景')}${pick('locations', l.id, 'composition', '机位', L.ANGLES, l.composition || '眼睛平视')}${pick('locations', l.id, 'camera_move', '运镜', L.CAMERA_MOVES, l.camera_move || '固定镜头')}${pick('locations', l.id, 'lighting', '光影', L.LIGHTINGS, l.lighting || '自然光')}</div>
@@ -233,13 +233,13 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
   }
   function propsPane(desk) {
     const list = shown(desk.props);
-    return `${batchBar('出本集道具', '一次打开一张。用你的 Grok 额度出完，把图放回格子。已有的图不会覆盖。', 'batch-props', !list.length)}
+    return `${batchBar('出本集道具', '一次打开一张。出完把图放回格子。已有的图不会覆盖。', 'batch-props', !list.length)}
       <ol class="pc-stack">${list.map(item => `<li class="pc-card"><div class="pc-row"><div><input class="pc-name" data-pc-entity="props" data-id="${E(item.id)}" data-key="name" value="${E(item.name)}"><small class="pc-chip">${item.scope === 'series' ? '全剧' : '本集'}</small><label>道具描述<textarea data-pc-entity="props" data-id="${E(item.id)}" data-key="description">${E(item.description || '')}</textarea></label></div>${scopeBtn('props', item)}</div><div class="pc-prop">${still(item.id,'hero','道具主图','1:1')}</div>
         <div class="pc-grid3"><label>材质 / 磨损<textarea data-pc-entity="props" data-id="${E(item.id)}" data-key="material" rows="2">${E(item.material || '')}</textarea></label><label>谁在用<input data-pc-entity="props" data-id="${E(item.id)}" data-key="used_by" value="${E(item.used_by || '')}"></label><label>叙事功能<textarea data-pc-entity="props" data-id="${E(item.id)}" data-key="significance" rows="2">${E(item.significance || '')}</textarea></label></div></li>`).join('')}</ol>
       ${list.length ? '' : '<p class="pc-empty">拆解后出现道具。</p>'}${fuseBox()}`;
   }
   function storyPane(desk) {
-    return `${batchBar('按参考出本集分镜', '一次打开一张。用你的 Grok 额度出完，把图放回格子。已有的图不会覆盖。', 'batch-storyboard', !shownBeats().length)}
+    return `${batchBar('按参考出本集分镜', '一次打开一张。出完把图放回格子。已有的图不会覆盖。', 'batch-storyboard', !shownBeats().length)}
       <ol class="pc-stack">${shownBeats().map((b, i, all) => beatCard(desk, b, all[i + 1])).join('')}</ol>
       <button type="button" class="pc-ghost" data-pc="add-beat">插入一段</button><details class="pc-card"><summary>归档分镜 · ${desk.archivedShots.filter(b=>b.episode === desk.episode).length} 镜</summary><p class="pc-muted">原文改动后未匹配的旧镜头保存在这里，旧图仍可查看。</p>${desk.archivedShots.filter(b=>b.episode === desk.episode).map(b=>`<p>${E(b.scene_heading)} · ${E((b.action || b.dialogue || '').slice(0,100))}<button type="button" data-pc="restore-beat" data-id="${E(b.id)}">恢复这镜</button></p>`).join('')}</details>
       ${shownBeats().length ? '' : '<p class="pc-empty">拆解后出现连续分镜。</p>'}${fuseBox()}`;
@@ -410,7 +410,7 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
   function grokPop() {
     const job = grokJob;
     if (!job) return '';
-    return `<div class="pc-pop"><div class="pc-pop-card"><div class="pc-row"><div><b>用你的 Grok 额度出这张</b><p class="pc-muted">${E(job.label)}。打开 Grok 生成，再把图放回这一格。不走付费接口。</p></div><button type="button" data-pc="grok-close">关闭</button></div><textarea readonly rows="8" aria-label="出图提示词">${E(job.prompt)}</textarea><div class="pc-row"><button type="button" class="pc-go" data-pc="grok-open">复制提示词并打开 Grok</button><label class="pc-go">放回这张图<input type="file" accept="image/png,image/jpeg,image/webp" data-pc-grok-file hidden></label></div></div></div>`;
+    return `<div class="pc-pop"><div class="pc-pop-card"><div class="pc-row"><div><b>出这张</b><p class="pc-muted">${E(job.label)}。生成后把图放回这一格。</p></div><button type="button" data-pc="grok-close">关闭</button></div><textarea readonly rows="8" aria-label="出图提示词">${E(job.prompt)}</textarea><div class="pc-row"><button type="button" class="pc-go" data-pc="grok-open">复制提示词</button><label class="pc-go">放回这张图<input type="file" accept="image/png,image/jpeg,image/webp" data-pc-grok-file hidden></label></div></div></div>`;
   }
   function armGrok(batch, id, kind, editNote = '') {
     const entity = entityOf(batch, id);
@@ -705,7 +705,7 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
     if (act === 'grok-open') {
       const text = grokJob?.prompt || '';
       if (!text) return;
-      navigator.clipboard?.writeText(text).then(() => toast('提示词已复制，到 Grok 里粘贴出图')).catch(() => toast('打开 Grok 后，把提示词贴进去'));
+      navigator.clipboard?.writeText(text).then(() => toast('提示词已复制')).catch(() => toast('请把提示词贴进出图页'));
       window.open('https://grok.com', '_blank', 'noopener');
       return;
     }
