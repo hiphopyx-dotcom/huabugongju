@@ -1,6 +1,6 @@
 import {axisPrompt} from './pianchang-axis.mjs?v=bd900549f538';
 // Lossless bridge between the film-set desk and the existing project/image store.
-import {breakScript, preferScriptBody, episodeKey} from './pianchang-parse.mjs?v=bd900549f538';
+import {breakScript, preferScriptBody, episodeKey, splitEpisodes} from './pianchang-parse.mjs?v=bd900549f538';
 import {deriveImageEntities, buildWorkflowPrompt, IMAGE_SLOTS, PORTRAIT_EMOTIONS} from './image-workflow.mjs?v=bd900549f538';
 import {shotsFromBreak} from './script-breakdown.mjs?v=bd900549f538';
 import {groups as languageGroups} from './storyboard.mjs?v=bd900549f538';
@@ -18,16 +18,34 @@ export function imageURL(src) {
   return '';
 }
 export const contentURL = id => /^[a-z0-9_-]{1,128}$/i.test(id || '') ? '/api/images?' + new URLSearchParams({action:'content',id}) : '';
+function normalizedMap(full) {
+  let norm = '';
+  const map = [];
+  for (let i = 0; i < full.length; i++) {
+    if (full[i] === '\r' && full[i + 1] === '\n') continue;
+    norm += full[i] === '\u3000' ? ' ' : full[i];
+    map.push(i);
+  }
+  return {norm, map};
+}
 export function scriptEpisodes(script) {
   const full = String(script || '');
-  const normalized = full.replace(/\r\n/g, '\n');
-  const body = preferScriptBody(normalized), offset = normalized.indexOf(body);
-  const re = /^[ \t\u3000]*(第\s*[零〇一二两三四五六七八九十百０-９\d]+\s*集)[^\n]*$/gm;
-  const headers = [...body.matchAll(re)];
-  // Offsets refer to the untouched full source, including CRLF and a character bible.
-  const originalOffset = index => { let n=0; for(let i=0;i<full.length;i++){ if(n===index)return i; if(full[i]==='\r' && full[i+1]==='\n')continue; n++; } return full.length; };
-  if (!headers.length) return [{name:'第一集',text:full,start:0,end:full.length}];
-  return headers.map((m,i)=>{ const start=originalOffset(offset+m.index),end=i+1<headers.length?originalOffset(offset+headers[i+1].index):full.length;return {name:m[1].replace(/\s/g,''),text:full.slice(start,end),start,end}; });
+  const parts = splitEpisodes(full);
+  if (!parts.length) return [{name:'第一集',text:full,start:0,end:full.length}];
+  const {norm, map} = normalizedMap(full);
+  const used = preferScriptBody(full.replace(/\r\n/g, '\n').replace(/\u3000/g, ' ')).trim();
+  const bodyAt = Math.max(0, norm.indexOf(used));
+  const atOrig = index => index >= map.length ? full.length : map[index];
+  let cursor = 0;
+  return parts.map((part, i) => {
+    const at = Math.max(0, used.indexOf(part.script, cursor));
+    const startNorm = bodyAt + at;
+    const nextAt = i + 1 < parts.length ? used.indexOf(parts[i + 1].script, at + part.script.length) : used.length;
+    const endNorm = bodyAt + (nextAt < 0 ? at + part.script.length : nextAt);
+    cursor = at + part.script.length;
+    const start = atOrig(startNorm), end = atOrig(endNorm);
+    return {name: part.title, text: full.slice(start, end), start, end};
+  });
 }
 export function scriptWindow(p, all=false) {
   if(all)return {name:'全剧',text:String(p.script || ''),start:0,end:String(p.script || '').length};
