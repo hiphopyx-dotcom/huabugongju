@@ -11,6 +11,8 @@ import * as Guide from './shot-guide.mjs?v=bd900549f538';
 import {escapeHTML as E, imageURL, contentURL, ensureDesk, scriptWindow, applyScriptDraft, episodeNames, visibleRows, syncShots as syncProjectShots, parseEpisode, entityFor, slotImage, acceptImage, prepareStill} from './pianchang-core.mjs?v=g5desk';
 import {POSES,axisBlock,axisDistance,dummySVG} from './pianchang-axis.mjs?v=bd900549f538';
 import * as L from './shot-language.mjs?v=bd900549f538';
+import {insertBeatAfter, insertSceneAfter, moveSceneBlock, moveBeat, dragEnabled, ORDER_UNSAVED} from './storyboard-edit.mjs?v=port9';
+import {episodeAspectOf, setEpisodeAspect} from './frame-aspect.mjs?v=port9';
 
 const ASPECTS = [{id:'1:1',label:'1:1'},{id:'3:4',label:'3:4'},{id:'16:9',label:'16:9'},{id:'9:16',label:'9:16'}];
 const RESOLUTIONS = [{id:'1k',label:'1K'},{id:'2k',label:'2K'}];
@@ -71,7 +73,7 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
   const scope = () => `${getUser()?.id || 'guest'}:${getProject()?.id || ''}`;
   let mountedScope = '';
   const detailState = new Map();
-  let dragging=null;
+  let dragging=null, orderDrag=null;
 
   const fold = {q:{characters:'',locations:'',props:'',storyboard:''}, open:{characters:new Set(),locations:new Set(),props:new Set(),storyboard:new Set()}};
   function sceneCode(text){const raw=String(text||'').trim();const m=raw.match(/(\d+)\s*[-–—]\s*(\d+)/);return m?`${m[1]}-${m[2]}`:(raw.split(/\s+/)[0]||'未标场号')}
@@ -79,11 +81,15 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
   function findBar(kind,placeholder){return `<div class="pc-find"><input type="search" data-pc-find="${kind}" value="${E(fold.q[kind]||'')}" placeholder="${E(placeholder)}" aria-label="${E(placeholder)}"><button type="button" data-pc="fold-all" data-kind="${kind}">全部折叠</button><button type="button" data-pc="open-all" data-kind="${kind}">全部展开</button></div>`}
   function foldCard(kind,id,name,body,note=''){const open=fold.open[kind].has(id);return `<li class="pc-card pc-fold-card"><button type="button" class="pc-fold" data-pc="toggle-fold" data-kind="${kind}" data-id="${E(id)}" aria-expanded="${open?'true':'false'}"><i class="pc-caret" data-open="${open?1:0}" aria-hidden="true"></i><span>${E(name||'未命名')}</span>${note?`<small class="pc-chip">${E(note)}</small>`:''}</button>${open?`<div class="pc-fold-body">${body}</div>`:''}</li>`}
   function storyGroups(beats){const groups=[],index=new Map();for(const b of beats){const code=sceneCode(b.scene_heading);let g=index.get(code);if(!g){g={id:code,code,beats:[]};index.set(code,g);groups.push(g)}g.beats.push(b)}return groups}
-  function storyBoard(desk){const all=shownBeats(),rows=all.filter(b=>foldHit('storyboard',b)),groups=storyGroups(rows);return `<div class="pc-stack">${groups.map(g=>foldCard('storyboard',g.id,g.code,`<ol class="pc-stack">${g.beats.map(b=>beatCard(desk,b,all[all.indexOf(b)+1])).join('')}</ol>`,`${g.beats.length} 镜`)).join('')}</div>${all.length?(rows.length?'':'<p class="pc-empty">没有对上的分镜</p>'):'<p class="pc-empty">拆解后出现连续分镜。</p>'}`}
+  function storyBoard(desk){const all=shownBeats(),rows=all.filter(b=>foldHit('storyboard',b)),groups=storyGroups(rows),searching=!dragEnabled(fold.q.storyboard);return `<div class="pc-stack">${groups.map(g=>`<section class="pc-scene" data-scene="${E(g.id)}"><div class="pc-row"><button type="button" data-pc="drag-scene" data-scene="${E(g.id)}" draggable="${searching?'false':'true'}" ${searching?'disabled':''}>拖动场次</button><button type="button" data-pc="add-scene" data-scene="${E(g.id)}">这场后面加一场</button></div>${foldCard('storyboard',g.id,g.code,`<ol class="pc-stack">${g.beats.map(b=>beatCard(desk,b,all[all.indexOf(b)+1],searching)).join('')}</ol>`,`${g.beats.length} 镜`)}</section>`).join('')}</div>${searching?'<p class="pc-muted">查找时不能拖动场次或镜头</p>':''}${all.length?(rows.length?'':'<p class="pc-empty">没有对上的分镜</p>'):'<p class="pc-empty">拆解后出现连续分镜。</p>'}`}
 
   function onPointerDown(e){const actor=e.target.closest('[data-pc-actor]');if(!actor || queue || !current())return;e.preventDefault();dragging={actor,who:actor.dataset.pcActor,id:actor.dataset.beat,pointer:e.pointerId};actor.setPointerCapture?.(e.pointerId);}
   function onPointerMove(e){if(!dragging || !current())return;const b=d().beats.find(b=>b.id===dragging.id),board=dragging.actor.closest('.pc-axis-board');if(!b||!board)return;const r=board.getBoundingClientRect();if(!r.width||!r.height)return;const block=axisBlock(b.ots_block);block[dragging.who].along=Math.min(92,Math.max(8,(e.clientX-r.left)/r.width*100));block[dragging.who].off=Math.min(32,Math.max(-28,(e.clientY-r.top)/r.height*100-50));b.ots_block=JSON.stringify(block);dragging.actor.style.left=block[dragging.who].along+'%';dragging.actor.style.top=(50+block[dragging.who].off)+'%';const label=board.parentElement.querySelector('[data-pc-distance]');if(label)label.textContent='间距约 '+axisDistance(block)+' 米';}
   function onPointerUp(){if(!dragging)return;dragging=null;commit(()=>syncShots(getProject(),d()));}
+  function searchingNow(){return !dragEnabled(fold.q.storyboard)}
+  function onDragStart(e){const handle=e.target.closest('[data-pc="drag-scene"],[data-pc="drag-beat"]');if(!handle||handle.disabled||searchingNow()||queue){e.preventDefault();return}orderDrag={kind:handle.dataset.pc,id:handle.dataset.scene||handle.dataset.id};e.dataTransfer?.setData('text/plain',orderDrag.kind+':'+orderDrag.id);if(e.dataTransfer)e.dataTransfer.effectAllowed='move'}
+  function onDragOver(e){if(!orderDrag||searchingNow())return;if(!e.target.closest('[data-scene],[data-pc="drag-beat"]'))return;e.preventDefault()}
+  function onDrop(e){const drag=orderDrag;orderDrag=null;if(!drag||searchingNow())return;e.preventDefault();const scene=e.target.closest('[data-scene]')?.dataset.scene;try{commit(()=>{const desk=d();if(drag.kind==='drag-scene'){if(!scene)throw Error(ORDER_UNSAVED);desk.beats=moveSceneBlock(desk.beats,desk.episode,drag.id,scene)}else{const target=e.target.closest('[data-pc="drag-beat"]')?.dataset.id;if(!target)throw Error(ORDER_UNSAVED);desk.beats=moveBeat(desk.beats,desk.episode,drag.id,target)}syncShots(getProject(),desk)})}catch{toast(ORDER_UNSAVED);message=ORDER_UNSAVED;paint()}}
 
   let cachedProject = null, cachedDesk = null;
   const capture = () => ({epoch,scope:scope()});
@@ -96,14 +102,14 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
     epoch++; dragging=null;
     if (queue) queue.stop = true;
     queue = null; busyKey = ''; picker = null; grokJob = null; preview = null; historyView = null;
-    if (host) { host.removeEventListener('click',onClick); host.removeEventListener('change',onChange); host.removeEventListener('input',onInput); host.removeEventListener('pointerdown',onPointerDown);host.removeEventListener('pointermove',onPointerMove);host.removeEventListener('pointerup',onPointerUp);host.removeEventListener('pointercancel',onPointerUp); }
+    if (host) { host.removeEventListener('click',onClick); host.removeEventListener('change',onChange); host.removeEventListener('input',onInput); host.removeEventListener('pointerdown',onPointerDown);host.removeEventListener('pointermove',onPointerMove);host.removeEventListener('pointerup',onPointerUp);host.removeEventListener('pointercancel',onPointerUp); host.removeEventListener('dragstart',onDragStart); host.removeEventListener('dragover',onDragOver); host.removeEventListener('drop',onDrop); }
     host = null;
   }
   function mount(el, kind) {
     unmount(); cachedProject=null; if(mountedScope !== scope())detailState.clear(); host = el; pageKind = kind; mountedScope = scope();
     message = ''; status = null; loading = false; library = [];
     if (!PAGE_TABS[kind]?.includes(d().tab)) d().tab = PAGE_TABS[kind]?.[0] || 'script';
-    host.addEventListener('click', onClick); host.addEventListener('change', onChange); host.addEventListener('input', onInput);host.addEventListener('pointerdown',onPointerDown);host.addEventListener('pointermove',onPointerMove);host.addEventListener('pointerup',onPointerUp);host.addEventListener('pointercancel',onPointerUp);
+    host.addEventListener('click', onClick); host.addEventListener('change', onChange); host.addEventListener('input', onInput);host.addEventListener('pointerdown',onPointerDown);host.addEventListener('pointermove',onPointerMove);host.addEventListener('pointerup',onPointerUp);host.addEventListener('pointercancel',onPointerUp);host.addEventListener('dragstart',onDragStart);host.addEventListener('dragover',onDragOver);host.addEventListener('drop',onDrop);
     paint(); void refresh();
   }
   async function refresh() {
@@ -165,7 +171,7 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
     return {script:'可贴一整部。用「第1集 / 第2集」分开。选好集数后拆解。已有图片和历史版本会保留，改过的原文会生成新镜头条目。', breakdown:'拆开之后按人物、场景、道具和分镜分开看。出图去对应页。', characters:'正面、侧面、背面，再加八种表情。同一张主参考锁住脸和服装。', locations:'中间白模是鸟瞰。先出白模，再出北机位；西、东参考北机位和白模；南机位补背面。', props:'先看材质、磨损、谁在用，再出道具主图。', storyboard:'每张图钉着剧本原文。写下到下一张的间隔。过肩镜头分开出正打和反打。'}[tab] || '';
   }
   function rail(desk) {
-    return `<aside class="pc-rail"><details class="pc-settings" data-pc-detail="settings" ${globalThis.innerWidth > 900 || !globalThis.innerWidth ? 'open' : ''}><summary>出图设置</summary><div><p class="pc-kicker">画幅</p><div class="pc-pills">${ASPECTS.map(a => `<button type="button" data-pc="aspect" data-id="${a.id}" class="${desk.aspect === a.id ? 'on' : ''}">${a.label}</button>`).join('')}</div><label class="pc-check"><input type="checkbox" data-pc-field="forceChar" ${desk.forceChar ? 'checked' : ''}>强制人物画幅</label></div><div><p class="pc-kicker">分辨率</p><div class="pc-pills">${RESOLUTIONS.map(r => `<button type="button" data-pc="resolution" data-id="${r.id}" class="${desk.resolution === r.id ? 'on' : ''}">${r.label}</button>`).join('')}</div></div><div><p class="pc-kicker">出图风格</p><div class="pc-pills">${LOOK_STYLES.map(s => `<button type="button" data-pc="look" data-id="${E(s.id)}" class="${desk.look === s.id ? 'on' : ''}" title="${E(s.hint || '')}">${E(s.label)}</button>`).join('')}</div></div><div><p class="pc-kicker">素材范围</p><div class="pc-pills">${[['all','全部'],['series','通用'],['episode','本集']].map(([id,label]) => `<button type="button" data-pc="scope" data-id="${id}" class="${desk.scope === id ? 'on' : ''}">${label}</button>`).join('')}</div></div></details></aside>`;
+    return `<aside class="pc-rail"><details class="pc-settings" data-pc-detail="settings" ${globalThis.innerWidth > 900 || !globalThis.innerWidth ? 'open' : ''}><summary>出图设置</summary><div><p class="pc-kicker">画幅</p><div class="pc-pills">${ASPECTS.map(a => `<button type="button" data-pc="aspect" data-id="${a.id}" class="${episodeAspectOf(desk) === a.id ? 'on' : ''}">${a.label}</button>`).join('')}</div><label class="pc-check"><input type="checkbox" data-pc-field="forceChar" ${desk.forceChar ? 'checked' : ''}>强制人物画幅</label></div><div><p class="pc-kicker">分辨率</p><div class="pc-pills">${RESOLUTIONS.map(r => `<button type="button" data-pc="resolution" data-id="${r.id}" class="${desk.resolution === r.id ? 'on' : ''}">${r.label}</button>`).join('')}</div></div><div><p class="pc-kicker">出图风格</p><div class="pc-pills">${LOOK_STYLES.map(s => `<button type="button" data-pc="look" data-id="${E(s.id)}" class="${desk.look === s.id ? 'on' : ''}" title="${E(s.hint || '')}">${E(s.label)}</button>`).join('')}</div></div><div><p class="pc-kicker">素材范围</p><div class="pc-pills">${[['all','全部'],['series','通用'],['episode','本集']].map(([id,label]) => `<button type="button" data-pc="scope" data-id="${id}" class="${desk.scope === id ? 'on' : ''}">${label}</button>`).join('')}</div></div></details></aside>`;
   }
   function body(p, desk, tab) {
     if (tab === 'script') return scriptPane(p);
@@ -250,10 +256,10 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
   function storyPane(desk) {
     return `${batchBar('按参考出本集分镜', '一次打开一张。出完把图放回格子。已有的图不会覆盖。', 'batch-storyboard', !shownBeats().length)}
       ${findBar('storyboard','查找场号、动作、对白')}${storyBoard(desk)}
-      <button type="button" class="pc-ghost" data-pc="add-beat">插入一段</button><details class="pc-card"><summary>归档分镜 · ${desk.archivedShots.filter(b=>b.episode === desk.episode).length} 镜</summary><p class="pc-muted">原文改动后未匹配的旧镜头保存在这里，旧图仍可查看。</p>${desk.archivedShots.filter(b=>b.episode === desk.episode).map(b=>`<p>${E(b.scene_heading)} · ${E((b.action || b.dialogue || '').slice(0,100))}<button type="button" data-pc="restore-beat" data-id="${E(b.id)}">恢复这镜</button></p>`).join('')}</details>
+      <button type="button" class="pc-ghost" data-pc="add-scene">增加一场</button><button type="button" class="pc-ghost" data-pc="add-beat">插入一段</button><details class="pc-card"><summary>归档分镜 · ${desk.archivedShots.filter(b=>b.episode === desk.episode).length} 镜</summary><p class="pc-muted">原文改动后未匹配的旧镜头保存在这里，旧图仍可查看。</p>${desk.archivedShots.filter(b=>b.episode === desk.episode).map(b=>`<p>${E(b.scene_heading)} · ${E((b.action || b.dialogue || '').slice(0,100))}<button type="button" data-pc="restore-beat" data-id="${E(b.id)}">恢复这镜</button></p>`).join('')}</details>
       ${fuseBox()}`;
   }
-  function beatCard(desk, b, next) {
+  function beatCard(desk, b, next, searching=false) {
     const ots = (b.composition || '') === '过肩镜头';
     const from = desk.characters.find(c => c.id === b.ots_from)?.name;
     const to = desk.characters.find(c => c.id === b.ots_to)?.name;
@@ -263,7 +269,7 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
         <label>画面与动作<textarea data-pc-beat="${E(b.id)}" data-key="action" rows="3">${E(b.action || '')}</textarea></label><label>台词<textarea data-pc-beat="${E(b.id)}" data-key="dialogue" rows="2">${E(b.dialogue || '')}</textarea></label>${b.script_excerpt ? `<button type="button" class="pc-excerpt" data-pc="cite" data-id="${E(b.id)}">在本集剧本中定位 · ${E(b.script_excerpt.slice(0, 48))}</button>` : ''}
         <div class="pc-picks">${pick('beats', b.id, 'shot_size', '景别', L.SHOT_SIZES, b.shot_size || b.shot_type || '中景')}${pick('beats', b.id, 'composition', '机位', L.ANGLES, b.composition || '眼睛平视')}${pick('beats', b.id, 'framing', '构图', L.COMPOSITIONS, b.framing || '三分构图')}${pick('beats', b.id, 'camera_move', '运镜', L.CAMERA_MOVES, b.camera_move || '固定镜头')}${pick('beats', b.id, 'stylize', '风格化', L.STYLIZES, b.stylize || '电影叙事')}${pick('beats', b.id, 'lighting', '光影', L.LIGHTINGS, b.lighting || '电影级布光')}${pick('beats', b.id, 'technique', '特殊摄影', L.TECHNIQUES, b.technique || '', true)}</div>
         ${ots ? `<div class="pc-grid2"><label>过谁的肩<select data-pc-beat="${E(b.id)}" data-key="ots_from"><option value="">请选择人物</option>${shown(desk.characters).map(c => `<option value="${E(c.id)}" ${b.ots_from === c.id ? 'selected' : ''}>${E(c.name)}</option>`).join('')}</select></label><label>拍谁的脸<select data-pc-beat="${E(b.id)}" data-key="ots_to"><option value="">请选择人物</option>${shown(desk.characters).map(c => `<option value="${E(c.id)}" ${b.ots_to === c.id ? 'selected' : ''}>${E(c.name)}</option>`).join('')}</select></label><label>正打场景<select data-pc-beat="${E(b.id)}" data-key="frame_location"><option value="">按分镜标注</option>${shown(desk.locations).map(l => `<option value="${E(l.id)}" ${b.frame_location === l.id ? 'selected' : ''}>${E(l.name)}</option>`).join('')}</select></label><label>反打场景<select data-pc-beat="${E(b.id)}" data-key="reverse_location"><option value="">与正打相同</option>${shown(desk.locations).map(l => `<option value="${E(l.id)}" ${b.reverse_location === l.id ? 'selected' : ''}>${E(l.name)}</option>`).join('')}</select></label></div>${axisPane(b,from,to)}` : ''}
-        <details><summary>站位说明 / 高级编辑</summary><label>站位与视线<textarea data-pc-beat="${E(b.id)}" data-key="ots_block" rows="2" placeholder="保持视线轴，不越轴">${E(b.ots_block || '')}</textarea></label></details>${referenceChoices(b)}<div class="pc-row"><button type="button" data-pc="video" data-id="${E(b.id)}">选图制作视频</button><button type="button" data-pc="del-beat" data-id="${E(b.id)}">移除这镜</button></div>
+        <details><summary>站位说明 / 高级编辑</summary><label>站位与视线<textarea data-pc-beat="${E(b.id)}" data-key="ots_block" rows="2" placeholder="保持视线轴，不越轴">${E(b.ots_block || '')}</textarea></label></details>${referenceChoices(b)}<div class="pc-row"><button type="button" data-pc="insert-beat" data-id="${E(b.id)}">这场加一镜</button><button type="button" data-pc="drag-beat" data-id="${E(b.id)}" draggable="${searching?'false':'true'}" ${searching?'disabled':''}>拖动镜头</button><button type="button" data-pc="video" data-id="${E(b.id)}">选图制作视频</button><button type="button" data-pc="del-beat" data-id="${E(b.id)}">移除这镜</button></div>
       </div></li>`;
   }
   function axisPane(b,from,to){
@@ -409,11 +415,11 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
   function slotAspect(batch, kind) {
     const desk = d();
     if (batch === 'characters') {
-      if (desk.forceChar) return desk.aspect;
+      if (desk.forceChar) return episodeAspectOf(desk);
       return EXPRS.some(x => x.kind === kind) ? '1:1' : '3:4';
     }
     if (kind === 'plan' || kind === 'hero') return '1:1';
-    return desk.aspect || '16:9';
+    return episodeAspectOf(desk);
   }
   function promptFor(batch,entity,kind) { return prepareStill(getProject(),d(),batch,entity.id,kind).prompt; }
   function grokPop() {
@@ -652,7 +658,11 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
       else paint();
       return;
     }
-    if (act === 'aspect' || act === 'resolution' || act === 'look' || act === 'scope') {
+    if (act === 'aspect') {
+      commit(() => { const desk=d(); const aspect=setEpisodeAspect(desk, desk.episode, btn.dataset.id); for (const b of desk.beats) if (b.episode===desk.episode) b.ratio=aspect; syncShots(getProject(), desk); });
+      return;
+    }
+    if (act === 'resolution' || act === 'look' || act === 'scope') {
       commit(() => { d()[act === 'look' ? 'look' : act === 'scope' ? 'scope' : act] = btn.dataset.id; });
       return;
     }
@@ -694,6 +704,16 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
     }
     if (act === 'flip') {
       commit(() => { const row = listOf(btn.dataset.kind).find(x => x.id === btn.dataset.id); if (row) { row.scope = row.scope === 'series' ? 'episode' : 'series'; row.episode = d().episode; } });
+      return;
+    }
+    if (act === 'insert-beat') {
+      try { commit(() => { const desk=d(); desk.beats=insertBeatAfter(desk.beats, btn.dataset.id, uid); syncShots(getProject(), desk); }); }
+      catch(err) { toast(ORDER_UNSAVED); error(err); }
+      return;
+    }
+    if (act === 'add-scene') {
+      try { commit(() => { const desk=d(); desk.beats=insertSceneAfter(desk.beats, desk.episode, btn.dataset.scene || '', uid); syncShots(getProject(), desk); }); }
+      catch(err) { toast(ORDER_UNSAVED); error(err); }
       return;
     }
     if (act === 'add-beat') {
