@@ -8,7 +8,7 @@ import {memberError} from './model-privacy.mjs?v=bd900549f538';
 import {resetQuota} from './quota.mjs?v=bd900549f538';
 import {removeReferences} from './asset-controls.mjs?v=bd900549f538';
 import * as Guide from './shot-guide.mjs?v=bd900549f538';
-import {escapeHTML as E, imageURL, contentURL, ensureDesk, scriptWindow, applyScriptDraft, episodeNames, visibleRows, syncShots as syncProjectShots, parseEpisode, entityFor, slotImage, acceptImage, prepareStill} from './pianchang-core.mjs?v=bd900549f538';
+import {escapeHTML as E, imageURL, contentURL, ensureDesk, scriptWindow, applyScriptDraft, episodeNames, visibleRows, syncShots as syncProjectShots, parseEpisode, entityFor, slotImage, acceptImage, prepareStill} from './pianchang-core.mjs?v=g4studio';
 import {POSES,axisBlock,axisDistance,dummySVG} from './pianchang-axis.mjs?v=bd900549f538';
 import * as L from './shot-language.mjs?v=bd900549f538';
 
@@ -212,7 +212,7 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
     return `${batchBar('出本集人物', '一次打开一张。用你的 Grok 额度出完，把图放回格子，再点下一张。已有的图不会覆盖。', 'batch-characters', !list.length)}
       <button type="button" class="pc-ghost" data-pc="add-char" ${queue ? 'disabled' : ''}>增加人物</button>
       <ol class="pc-stack">${list.map(c => `<li class="pc-card"><div class="pc-row"><div><input class="pc-name" data-pc-entity="characters" data-id="${E(c.id)}" data-key="name" value="${E(c.name)}"><small class="pc-chip">${c.scope === 'series' ? '全剧' : '本集'}</small><p class="pc-muted">${E(c.role)} · ${E(c.age)} · ${E(c.gender)}</p></div><div class="pc-row">${scopeBtn('characters', c)}<button type="button" data-pc="download-entity" data-id="${E(c.id)}" data-batch="characters">下载这个人</button><button type="button" data-pc="batch-one" data-batch="characters" data-id="${E(c.id)}">${queue?.entityId === c.id ? '取消' : '出这个人'}</button><button type="button" data-pc="del-char" data-id="${E(c.id)}">删除</button></div></div>
-        <details class="pc-bio" data-pc-detail="bio:${E(c.id)}"><summary>人物设定与质感 · 点击展开</summary><div class="pc-grid3"><label>身份<input data-pc-entity="characters" data-id="${E(c.id)}" data-key="role" value="${E(c.role || '')}"></label><label>年龄<input data-pc-entity="characters" data-id="${E(c.id)}" data-key="age" value="${E(c.age || '')}"></label><label>性别<input data-pc-entity="characters" data-id="${E(c.id)}" data-key="gender" value="${E(c.gender || '')}"></label></div><label>外貌<textarea data-pc-entity="characters" data-id="${E(c.id)}" data-key="appearance" rows="3">${E(c.appearance || '')}</textarea></label><label>服装<textarea data-pc-entity="characters" data-id="${E(c.id)}" data-key="costume" rows="2">${E(c.costume || '')}</textarea></label>${gradeBox(c.id)}</details>
+        <details class="pc-bio" data-pc-detail="bio:${E(c.id)}"><summary>小传提示词 · 出图会用到</summary><div class="pc-grid3"><label>身份<input data-pc-entity="characters" data-id="${E(c.id)}" data-key="role" value="${E(c.role || '')}"></label><label>年龄<input data-pc-entity="characters" data-id="${E(c.id)}" data-key="age" value="${E(c.age || '')}"></label><label>性别<input data-pc-entity="characters" data-id="${E(c.id)}" data-key="gender" value="${E(c.gender || '')}"></label></div><label>外貌<textarea data-pc-entity="characters" data-id="${E(c.id)}" data-key="appearance" rows="3">${E(c.appearance || '')}</textarea></label><label>服装<textarea data-pc-entity="characters" data-id="${E(c.id)}" data-key="costume" rows="2">${E(c.costume || '')}</textarea></label>${gradeBox(c.id)}</details>
         <p class="pc-kicker">三视图 · 各一张</p><div class="pc-grid3">${VIEWS.map(v => still(c.id, v.kind, v.label, v.aspect)).join('')}</div>
         <p class="pc-kicker">八种表情 · 单人面部特写</p><div class="pc-grid8">${EXPRS.map(v => still(c.id, v.kind, v.label, v.aspect)).join('')}</div></li>`).join('')}</ol>
       ${list.length ? '' : '<p class="pc-empty">拆解后出现人物，也可以点上面的增加人物。</p>'}${fuseBox()}`;
@@ -253,23 +253,23 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
         <input class="pc-name" data-pc-beat="${E(b.id)}" data-key="scene_heading" value="${E(b.scene_heading || '分镜')}">
         <label>画面与动作<textarea data-pc-beat="${E(b.id)}" data-key="action" rows="3">${E(b.action || '')}</textarea></label><label>台词<textarea data-pc-beat="${E(b.id)}" data-key="dialogue" rows="2">${E(b.dialogue || '')}</textarea></label>${b.script_excerpt ? `<button type="button" class="pc-excerpt" data-pc="cite" data-id="${E(b.id)}">原文 · ${E(b.script_excerpt.slice(0, 80))}</button>` : ''}
         <div class="pc-picks">${pick('beats', b.id, 'shot_size', '景别', L.SHOT_SIZES, b.shot_size || b.shot_type || '中景')}${pick('beats', b.id, 'composition', '机位', L.ANGLES, b.composition || '眼睛平视')}${pick('beats', b.id, 'framing', '构图', L.COMPOSITIONS, b.framing || '三分构图')}${pick('beats', b.id, 'camera_move', '运镜', L.CAMERA_MOVES, b.camera_move || '固定镜头')}${pick('beats', b.id, 'stylize', '风格化', L.STYLIZES, b.stylize || '电影叙事')}${pick('beats', b.id, 'lighting', '光影', L.LIGHTINGS, b.lighting || '电影级布光')}${pick('beats', b.id, 'technique', '特殊摄影', L.TECHNIQUES, b.technique || '', true)}</div>
-        ${ots ? `<div class="pc-grid2"><label>过谁的肩<select data-pc-beat="${E(b.id)}" data-key="ots_from"><option value="">请选择人物</option>${shown(desk.characters).map(c => `<option value="${E(c.id)}" ${b.ots_from === c.id ? 'selected' : ''}>${E(c.name)}</option>`).join('')}</select></label><label>拍谁的脸<select data-pc-beat="${E(b.id)}" data-key="ots_to"><option value="">请选择人物</option>${shown(desk.characters).map(c => `<option value="${E(c.id)}" ${b.ots_to === c.id ? 'selected' : ''}>${E(c.name)}</option>`).join('')}</select></label></div>${axisPane(b,from,to)}` : ''}
+        ${ots ? `<div class="pc-grid2"><label>过谁的肩<select data-pc-beat="${E(b.id)}" data-key="ots_from"><option value="">请选择人物</option>${shown(desk.characters).map(c => `<option value="${E(c.id)}" ${b.ots_from === c.id ? 'selected' : ''}>${E(c.name)}</option>`).join('')}</select></label><label>拍谁的脸<select data-pc-beat="${E(b.id)}" data-key="ots_to"><option value="">请选择人物</option>${shown(desk.characters).map(c => `<option value="${E(c.id)}" ${b.ots_to === c.id ? 'selected' : ''}>${E(c.name)}</option>`).join('')}</select></label><label>正打场景<select data-pc-beat="${E(b.id)}" data-key="frame_location"><option value="">按分镜标注</option>${shown(desk.locations).map(l => `<option value="${E(l.id)}" ${b.frame_location === l.id ? 'selected' : ''}>${E(l.name)}</option>`).join('')}</select></label><label>反打场景<select data-pc-beat="${E(b.id)}" data-key="reverse_location"><option value="">与正打相同</option>${shown(desk.locations).map(l => `<option value="${E(l.id)}" ${b.reverse_location === l.id ? 'selected' : ''}>${E(l.name)}</option>`).join('')}</select></label></div>${axisPane(b,from,to)}` : ''}
         <details><summary>站位说明 / 高级编辑</summary><label>站位与视线<textarea data-pc-beat="${E(b.id)}" data-key="ots_block" rows="2" placeholder="保持视线轴，不越轴">${E(b.ots_block || '')}</textarea></label></details>${referenceChoices(b)}<div class="pc-row"><button type="button" data-pc="video" data-id="${E(b.id)}">选图制作视频</button><button type="button" data-pc="del-beat" data-id="${E(b.id)}">移除这镜</button></div>
       </div></li>`;
   }
   function axisPane(b,from,to){
     const block=axisBlock(b.ots_block),names={a:from || 'A',b:to || 'B'};
-    return `<div class="pc-axis"><p class="pc-kicker">过肩轴线 · 先选姿态，再拖白模改站位</p><p class="pc-muted">正打过 ${E(names.a)} 的肩拍 ${E(names.b)}，反打交换机位，人物姿态保持一致。</p><div class="pc-grid2">${['a','b'].map(who=>`<div><b>${E(names[who])}</b><div class="pc-pills">${POSES.map(([pose,label])=>`<button type="button" data-pc="pose" data-id="${E(b.id)}" data-who="${who}" data-pose="${pose}" class="${block[who].pose===pose?'on':''}">${label}</button>`).join('')}</div></div>`).join('')}</div><div class="pc-axis-board"><span class="pc-axis-line">180° AXIS</span><span class="pc-axis-camera">正打机位 / 反打机位保持在轴线同侧</span>${['a','b'].map(who=>`<button type="button" class="pc-axis-actor" data-pc-actor="${who}" data-beat="${E(b.id)}" style="left:${block[who].along}%;top:${50+block[who].off}%" aria-label="拖动${E(names[who])}白模">${dummySVG(block[who].pose)}<span>${E(names[who])}</span></button>`).join('')}</div><p class="pc-muted" data-pc-distance>间距约 ${axisDistance(block)} 米</p><div class="pc-grid2">${['a','b'].map(who=>`<label>${E(names[who])} 横向位置（也可拖动白模）<input type="range" min="8" max="92" value="${block[who].along}" data-pc-axis-position="${who}" data-beat="${E(b.id)}"></label>`).join('')}</div></div>`;
+    return `<div class="pc-axis"><p class="pc-kicker">过肩轴线 · 先选姿态，再拖白模改站位</p><p class="pc-muted">正打过 ${E(names.a)} 的肩拍 ${E(names.b)}，反打交换机位，人物姿态保持一致。</p><div class="pc-grid2">${['a','b'].map(who=>`<div><b>${E(names[who])}</b><div class="pc-pills">${POSES.map(([pose,label])=>`<button type="button" data-pc="pose" data-id="${E(b.id)}" data-who="${who}" data-pose="${pose}" class="${block[who].pose===pose?'on':''}">${label}</button>`).join('')}</div></div>`).join('')}</div><div class="pc-axis-board"><span class="pc-axis-line">180° AXIS</span><span class="pc-axis-camera">正打机位 / 反打机位保持在轴线同侧</span>${['a','b'].map(who=>`<button type="button" class="pc-axis-actor" data-pc-actor="${who}" data-beat="${E(b.id)}" style="left:${block[who].along}%;top:${50+block[who].off}%" aria-label="拖动${E(names[who])}白模">${dummySVG(block[who].pose)}<span>${E(names[who])}</span></button>`).join('')}</div><p class="pc-muted" data-pc-distance>间距约 ${axisDistance(block)} 米</p><div class="pc-grid2">${['a','b'].map(who=>`<label>${E(names[who])} 横向位置（也可拖动白模）<input type="range" min="8" max="92" value="${block[who].along}" data-pc-axis-position="${who}" data-beat="${E(b.id)}"></label>`).join('')}</div><button type="button" class="pc-go" data-pc="pair" data-id="${E(b.id)}">按轴线出正反打</button></div>`;
   }
   function pick(list, id, key, label, options, value, allowEmpty = false) {
     return `<label class="pc-pick"><span>${label}</span><select data-pc-entity="${list}" data-id="${E(id)}" data-key="${key}">${opt(options, value, allowEmpty)}</select><button type="button" data-pc="guide" data-list="${list}" data-id="${E(id)}" data-key="${key}">看示例 / 白模</button></label>`;
   }
   function fuseBox() {
     const category = d().tab, refs = d().fuse[category] || [];
-    return `<details class="pc-card"><summary>额外参考 · ${refs.length} 张</summary><p class="pc-muted">只用于当前页；与自动参考合计最多3张，单张≤768KB。</p><input type="file" data-pc-fuse accept="image/png,image/jpeg,image/webp" multiple><div class="pc-ref-thumbs">${refs.map(src=>`<img src="${E(imageURL(src))}" alt="额外参考">`).join('')}</div><button type="button" data-pc="clear-fuse">清空额外参考</button></details>`;
+    return `<details class="pc-card"><summary>融合参考 · 最多 3 张 · ${refs.length}</summary><p class="pc-muted">出这一页时融进画面。与自动参考合计最多 3 张。</p><input type="file" data-pc-fuse accept="image/png,image/jpeg,image/webp" multiple><div class="pc-ref-thumbs">${refs.map(src=>`<img src="${E(imageURL(src))}" alt="融合参考">`).join('')}</div><button type="button" data-pc="clear-fuse">清空融合参考</button></details>`;
   }
   function episodeBar(p,desk) {
-    return `<div class="pc-row pc-episode"><label>正在制作 <select aria-label="正在制作的集数" data-pc-field="episode" ${queue ? 'disabled' : ''}>${episodeNames(p).map(name=>`<option ${name === desk.episode ? 'selected' : ''}>${E(name)}</option>`).join('')}</select></label><span class="pc-muted">原文 → 拆解 → 选图 → 连续分镜</span><button type="button" data-pc="gallery">我的图库 / 自由出图</button></div>`;
+    return `<div class="pc-row pc-episode"><label>正在制作 <select aria-label="正在制作的集数" data-pc-field="episode" ${queue ? 'disabled' : ''}>${episodeNames(p).map(name=>`<option ${name === desk.episode ? 'selected' : ''}>${E(name)}</option>`).join('')}</select></label><button type="button" data-pc="add-episode">加一集</button><span class="pc-muted">原文 → 拆解 → 选图 → 连续分镜</span><button type="button" data-pc="gallery">我的图库 / 自由出图</button></div>`;
   }
   function serviceBar(desk,tab) {
     const pending = Object.keys(desk.pending).length;
@@ -648,6 +648,20 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
     if (act === 'script-restore') { commit(()=>{delete (d().scriptDrafts ||= {})[scriptKey()]}); return; }
     if (act === 'script-mode') { commit(()=>{d().scriptAll=!d().scriptAll}); return; }
     if (act === 'import-script') { importScript?.(); return; }
+    if (act === 'add-episode') {
+      const names = episodeNames(getProject());
+      const n = names.length + 1;
+      const title = `第${n}集`;
+      commit(() => {
+        const project = getProject();
+        const script = String(project.script || '').replace(/\s+$/, '');
+        project.script = `${script}\n\n${title}\n`;
+        d().episode = title;
+      });
+      if (pageKind !== 'script') goto('script');
+      toast(`已加上${title}，把这一集的剧本贴在标题下面再拆解`);
+      return;
+    }
     if (act === 'import') { host.querySelector('[data-pc-file]')?.click(); return; }
     if (act === 'sample') { commit(() => { const p = getProject(); if(p.script)(d().scriptHistory ||= []).push({text:p.script,created:Date.now()}); p.script = SAMPLE;d().scriptDrafts={};d().scriptAll=false; if (!p.title || p.title === '未命名项目') p.title = '夜渡'; }); toast('已填入《夜渡》'); return; }
     if (act === 'parse') { parse(); return; }
