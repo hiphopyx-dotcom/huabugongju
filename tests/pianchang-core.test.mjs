@@ -48,7 +48,7 @@ test('per-episode save preserves bible, CRLF and all other episodes; stale draft
  const p=make();p.script='人物小传：阿青\r\n第一集\r\n1-1 日 内 门房\r\n△阿青走。\r\n第二集\r\n2-1 夜 外 江边\r\n△小林停下。';const d=ensureDesk(p,uid),original=p.script,part=scriptWindow(p);assert.equal(part.name,'第一集');assert.ok(!part.text.includes('第二集'));
  d.scriptDrafts={'第一集':{source:part.text,text:part.text.replace('阿青走','阿青跑')}};applyScriptDraft(p,'第一集');assert.equal(p.script,original.replace('阿青走','阿青跑'));assert.equal(d.scriptHistory[0].text,original);
  const now=scriptWindow(p);d.scriptDrafts={'第一集':{source:now.text,text:now.text+'新动作'}};p.script=p.script.replace('阿青跑','阿青坐下');assert.throws(()=>applyScriptDraft(p,'第一集'),/其他页面更新/);assert.ok(d.scriptDrafts['第一集']);
- assert.deepEqual(scriptEpisodes('第２集\n动作\n第两集\n动作').map(e=>e.name),['第２集','第两集']);
+  assert.deepEqual(scriptEpisodes('第２集\n动作\n第两集\n更长的正文').map(e=>e.name),['第两集']);
 });
 test('episode style lock and axis poses reach both generation prompts with camera direction reversed only',async()=>{
  const {axisBlock,axisDistance,axisPrompt}=await import('../public/studio/pianchang-axis.mjs');const {zipStore}=await import('../public/studio/script-docx.mjs');
