@@ -1,4 +1,5 @@
 import {wardrobeLockPrompt, isCharacterFollowKind} from './wardrobe-lock.mjs';
+import {locationViewPrompt} from './location-views.mjs';
 // Local-only adapter for sunny-terra's real /api/backup -> createUserBackup
 // contract at d0daeebb40009982b84a043e8dc2f8811134d23e. Never upload/persist the
 // original backup: jingben_members may include password hashes. A local file
@@ -343,7 +344,7 @@ export async function readImageWorkshopArchive(input, options = {}) {
   return inspectImageWorkshopImport(unpacked, options);
 }
 
-const aspects = new Set(['16:9','9:16','1:1','3:4','4:3','4:5','2:3','3:2']);
+const aspects = new Set(['16:9','9:16','1:1','3:4','4:3','4:5','2:3','3:2','2:1']);
 const charViews = {
   front: '正面站姿，中大腿以上，面向镜头，双臂自然放松。',
   side: '完整侧面轮廓，朝左，中大腿以上，服装和发型保持一致。',
@@ -384,6 +385,7 @@ export function buildImageWorkshopPrompt(category, fields = {}) {
   } else if (category === 'locations') {
     parts.push(`场景：${[field('heading'), name, description].filter(Boolean).join('；') || '剧本指定空间'}。`, `时间、天气、气氛：${[field('timeOfDay'), field('weather'), field('atmosphere')].filter(Boolean).join('，') || '依照剧本'}。`, '只使用剧本或参考图明确出现的建筑与物件，不新增门、床、道路、泳池或多余家具。');
     if (kind === 'plan') parts.push('真正的正交垂直俯视白模，镜头无限高并垂直朝下；北为画面上方，西为左，东为右。墙体、门窗开口、家具块体的位置与数量固定，不使用斜俯视，不放人物或坐标轴。');
+    else if (String(kind).startsWith('a_') || kind === 'pano') parts.push(locationViewPrompt({heading:field('heading'), name, description:field('description'), time_of_day:field('timeOfDay'), weather:field('weather'), atmosphere:field('atmosphere')}, kind === 'pano' ? 'establishing' : kind));
     else parts.push(`${cameraViews[kind] || field('view', '按选定机位拍摄')}；方位属于固定世界坐标，不能按画面左右重新布置空间。`, '呈现完成美术置景的真实空场景；白模只作结构参考，不把成图变成灰色未贴图模型。');
     if (field('worldAnchors')) parts.push(`固定空间锚点：${field('worldAnchors')}`);
     if (lock) parts.push('保持参考图墙体、门窗、家具的数量和位置，不镜像、不更换空间。');

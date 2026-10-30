@@ -5,6 +5,7 @@ import {deriveImageEntities, buildWorkflowPrompt, IMAGE_SLOTS} from './image-wor
 import {shotsFromBreak} from './script-breakdown.mjs';
 import {groups as languageGroups} from './storyboard.mjs';
 import {episodeAspectOf} from './frame-aspect.mjs';
+import {coverageSlot} from './ots-coverage.mjs';
 
 export const escapeHTML = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function imageURL(src) {
@@ -173,7 +174,8 @@ function reference(p,d,id,slot) {
 }
 export function prepareStill(p,d,category,id,slot) {
   const row = entityFor(d,category,id);
-  if (!row || !IMAGE_SLOTS[category]?.some(s=>s.id === slot)) throw Error('图片位置已变化，请重新选择');
+  const extraLocation=['a_establishing','a_plan','a_view_w','a_view_e','a_view_s','pano'];
+  if (!row || !(IMAGE_SLOTS[category]?.some(s=>s.id === slot) || category==='locations' && extraLocation.includes(slot))) throw Error('图片位置已变化，请重新选择');
   const key = `${id}:${slot}`;
   if (slotImage(p,d,key).locked) throw Error('管理员已锁定此图片，仍可查看和使用');
   const canonical = {id:row.id,name:row.name || row.scene_heading || '分镜',category,scope:row.scope || 'episode',episode:row.episode || d.episode,fields:{...row,usedBy:row.used_by,timeOfDay:row.time_of_day,worldAnchors:row.world_anchors}};
@@ -185,17 +187,21 @@ export function prepareStill(p,d,category,id,slot) {
   const add = r => { if (r && !refs.some(x=>JSON.stringify(x) === JSON.stringify(r))) refs.push(r); };
   let view = p;
   if (category === 'characters' && slot !== 'front') add(reference(p,d,id,'front'));
-  if (category === 'locations' && slot !== 'plan') { add(reference(p,d,id,'plan')); if (slot !== 'view_n') add(reference(p,d,id,'view_n')); }
+  if (category === 'locations' && String(slot).startsWith('a_')) { if (slot !== 'a_establishing') add(reference(p,d,id,'a_establishing')); if (slot !== 'a_plan') add(reference(p,d,id,'a_plan')); }
+  else if (category === 'locations' && slot !== 'plan' && slot !== 'pano') { add(reference(p,d,id,'plan')); if (slot !== 'view_n') add(reference(p,d,id,'view_n')); }
   if (category === 'storyboard') {
     const source = p.shots.find(s=>s.id === id);
     if (!source) throw Error('对应分镜已不存在');
     const shot = {...source,otsBlock:axisPrompt(row.ots_block,d.characters.find(c=>c.id===row.ots_from)?.name || 'A',d.characters.find(c=>c.id===row.ots_to)?.name || 'B')}, assets = [...p.assets];
+    const chosen = new Map();
     for (const group of groups) {
       const namesKey = {characters:'characterNames',locations:'locationNames',props:'propNames'}[group];
       const selected = d[group].filter(e=>!e.archived && (e.scope === 'series' || e.episode === row.episode) && (source[namesKey] || []).includes(e.name));
       shot[group] = [...(source[group] || [])];
       for (const e of selected) {
-        const choice = row.refChoices?.[e.id] || (group === 'characters' ? 'front' : group === 'locations' ? 'view_n' : 'hero');
+        const baseChoice = row.refChoices?.[e.id] || (group === 'characters' ? 'front' : group === 'locations' ? 'view_n' : 'hero');
+        const choice = group === 'locations' ? coverageSlot(slot, baseChoice, !!reference(p,d,e.id,'pano')) : baseChoice;
+        chosen.set(e.id, choice);
         const r = reference(p,d,e.id,choice); if (!r) continue;
         const aid = `ref-${e.id}`;
         assets.push({id:aid,name:e.name,kind:'image',src:slotImage(p,d,`${e.id}:${choice}`).src});
@@ -217,7 +223,7 @@ export function prepareStill(p,d,category,id,slot) {
     for (const aid of [...new Set(ordered)]) {
       const c = d.characters.find(c=>`ref-${c.id}` === aid), l = d.locations.find(c=>`ref-${c.id}` === aid), prop = d.props.find(c=>`ref-${c.id}` === aid), entity = c || l || prop;
       const a = assets.find(a=>a.id === aid);
-      if (entity) add(reference(p,d,entity.id,row.refChoices?.[entity.id] || (c?'front':l?'view_n':'hero')));
+      if (entity) add(reference(p,d,entity.id,chosen.get(entity.id) || row.refChoices?.[entity.id] || (c?'front':l?'view_n':'hero')));
       else if (a?.imageLibraryId) add({id:a.imageLibraryId});
       else if (a && imageURL(a.src).startsWith('data:')) add({dataUrl:a.src});
       if (refs.length === 3) break;

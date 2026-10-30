@@ -1,5 +1,7 @@
 // Pure creative workflow helpers. No network, account, billing, or generation side effects.
 import {IMAGE_WORKSHOP_CATEGORIES, buildImageWorkshopPrompt} from './image-workshop-core.mjs';
+import {STRUCTURE_A} from './location-views.mjs';
+const EXTRA_LOCATION_SLOTS = [...STRUCTURE_A, {id:'pano',label:'360° 全景',ratio:'2:1'}];
 import * as SB from './storyboard.mjs';
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -319,7 +321,7 @@ export function deriveImageEntities(project, uuid = () => globalThis.crypto.rand
 
 function slotOf(category, slot) {
  const id=typeof slot==='string'?slot:slot?.id;
- const selected=IMAGE_SLOTS[category]?.find(option => option.id===id);
+ const selected=IMAGE_SLOTS[category]?.find(option => option.id===id) || (category==='locations' ? EXTRA_LOCATION_SLOTS.find(option => option.id===id) : undefined);
  if(!selected)throw Error('该图片类型不支持这个视角');
  return selected;
 }

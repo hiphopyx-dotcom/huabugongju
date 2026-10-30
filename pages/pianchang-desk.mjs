@@ -13,6 +13,8 @@ import {POSES,axisBlock,axisDistance,dummySVG} from './pianchang-axis.mjs?v=bd90
 import * as L from './shot-language.mjs?v=bd900549f538';
 import {insertBeatAfter, insertSceneAfter, moveSceneBlock, moveBeat, dragEnabled, ORDER_UNSAVED} from './storyboard-edit.mjs?v=port9';
 import {episodeAspectOf, setEpisodeAspect} from './frame-aspect.mjs?v=port9';
+import {mountPano} from './pano-viewer.mjs?v=port9';
+import {expectedViewRules, judgeViewQa, layoutFromText, shouldPersistViewStill, VIEW_QA_FAIL} from './scene-spec.mjs?v=port9';
 
 const ASPECTS = [{id:'1:1',label:'1:1'},{id:'3:4',label:'3:4'},{id:'16:9',label:'16:9'},{id:'9:16',label:'9:16'}];
 const RESOLUTIONS = [{id:'1k',label:'1K'},{id:'2k',label:'2K'}];
@@ -159,6 +161,8 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
     for(const el of host.querySelectorAll('[data-pc-detail]')) if(detailState.has(el.dataset.pcDetail))el.open=detailState.get(el.dataset.pcDetail);
     if (scroller) scroller.scrollTop = y;
     if (cite && tab === 'script') focusSource();
+    const still = preview?.kind==='pano' ? host.querySelector('.pc-large-image') : null;
+    if (still && still.tagName === 'IMG') { const canvas=document.createElement('canvas'); canvas.width=640; canvas.height=320; canvas.className='pc-large-image'; still.replaceWith(canvas); mountPano(canvas, still.getAttribute('src')); }
   }
   function shell(p, desk, tab) {
     const showRail = true;
@@ -219,7 +223,7 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
   function batchOf(kind) {
     if (kind === 'hero') return 'props';
     if (kind === 'frame' || kind === 'reverse') return 'storyboard';
-    if (kind === 'plan' || kind.startsWith('view_')) return 'locations';
+    if (kind === 'plan' || kind === 'pano' || kind.startsWith('view_') || kind.startsWith('a_')) return 'locations';
     return 'characters';
   }
   function charactersPane(desk) {
@@ -243,7 +247,11 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
       ${findBar('locations','查找场景：名字、场次')}<ol class="pc-stack">${rows.map(l => foldCard('locations', l.id, l.name || '未命名', `<div class="pc-row"><div><input class="pc-name" data-pc-entity="locations" data-id="${E(l.id)}" data-key="name" value="${E(l.name)}"><small class="pc-chip">${l.scope === 'series' ? '全剧' : '本集'}</small><p class="pc-muted">${E(l.heading || '')}</p><label>空间描述<textarea data-pc-entity="locations" data-id="${E(l.id)}" data-key="description">${E(l.description || '')}</textarea></label><p class="pc-kicker">俯视：上北下南 · 左西右东。先出俯视白模，四向只从这张图的四边拍。</p></div><div class="pc-row">${scopeBtn('locations', l)}<button type="button" data-pc="download-entity" data-id="${E(l.id)}" data-batch="locations">下载这个场景</button><button type="button" data-pc="batch-one" data-batch="locations" data-id="${E(l.id)}">${queue?.entityId === l.id ? '取消' : '出这个场景'}</button></div></div>
         <div class="pc-grid3">${[['time_of_day','时间'],['weather','天气'],['atmosphere','氛围'],['world_anchors','空间锚点 / 门窗家具方位']].map(([key,label])=>`<label>${label}<textarea data-pc-entity="locations" data-id="${E(l.id)}" data-key="${key}" rows="2">${E(l[key] || '')}</textarea></label>`).join('')}</div>
         <div class="pc-picks">${pick('locations' , l.id, 'shot_size', '景别', L.SHOT_SIZES, l.shot_size || '全景')}${pick('locations', l.id, 'composition', '机位', L.ANGLES, l.composition || '眼睛平视')}${pick('locations', l.id, 'camera_move', '运镜', L.CAMERA_MOVES, l.camera_move || '固定镜头')}${pick('locations', l.id, 'lighting', '光影', L.LIGHTINGS, l.lighting || '自然光')}</div>
-        <div class="pc-cross"><span></span>${still(l.id,'view_n','北机位', slotAspect('locations','view_n'))}<span></span>${still(l.id,'view_w','西机位', slotAspect('locations','view_w'))}${still(l.id,'plan','俯视白模','1:1')}${still(l.id,'view_e','东机位', slotAspect('locations','view_e'))}<span></span>${still(l.id,'view_s','南机位', slotAspect('locations','view_s'))}<span></span></div>`)).join('')}</ol>
+        <div class="pc-row"><button type="button" data-pc="loc-structure" data-id="${E(l.id)}" data-mode="a" class="${l.structure==='a'?'on':''}">结构 A · 主图+写实俯视+左右对面</button><button type="button" data-pc="loc-structure" data-id="${E(l.id)}" data-mode="b" class="${l.structure==='a'?'':'on'}">结构 B · 俯视白模+东南西北</button></div>
+        ${l.structure==='a' ? `<div class="pc-grid3">${[['a_establishing','主图'],['a_plan','写实俯视'],['a_view_w','左'],['a_view_e','右'],['a_view_s','对面']].map(([kind,label])=>still(l.id,kind,label,'16:9')).join('')}</div>` : `<div class="pc-cross"><span></span>${still(l.id,'view_n','北机位', slotAspect('locations','view_n'))}<span></span>${still(l.id,'view_w','西机位', slotAspect('locations','view_w'))}${still(l.id,'plan','俯视白模','1:1')}${still(l.id,'view_e','东机位', slotAspect('locations','view_e'))}<span></span>${still(l.id,'view_s','南机位', slotAspect('locations','view_s'))}<span></span></div>`}
+        <label class="pc-check"><input type="checkbox" data-pc-field="viewQa" ${desk.viewQa?'checked':''}>白膜四向质检（不合格不进格子）</label>
+        ${desk.viewQa?`<textarea data-pc-qa="${E(l.id)}" rows="3" placeholder="贴上非付费通道读出的 JSON"></textarea><button type="button" data-pc="apply-qa" data-id="${E(l.id)}">用这份核对结果检查北机位</button><p class="pc-notice">${E(desk.qaNotes?.[l.id]||'')}</p>`:''}
+        ${still(l.id,'pano','360° 全景','2:1')}`)).join('')}</ol>
       ${list.length ? (rows.length ? '' : '<p class="pc-empty">没有对上的场景</p>') : '<p class="pc-empty">拆解后出现场景。</p>'}${fuseBox()}`;
   }
   function propsPane(desk) {
@@ -422,6 +430,7 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
       if (desk.forceChar) return episodeAspectOf(desk);
       return EXPRS.some(x => x.kind === kind) ? '1:1' : '3:4';
     }
+    if (kind === 'pano') return '2:1';
     if (kind === 'plan' || kind === 'hero') return '1:1';
     return episodeAspectOf(desk);
   }
@@ -469,9 +478,9 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
   function jobsFor(batch, onlyId) {
     const desk = d();
     const list = (batch === 'characters' ? shown(desk.characters) : batch === 'locations' ? shown(desk.locations) : batch === 'props' ? shown(desk.props) : shownBeats()).filter(item => !onlyId || item.id === onlyId);
-    const kinds = batch === 'characters' ? [...VIEWS, ...EXPRS] : batch === 'locations' ? [{kind:'plan'}, {kind:'view_n'}, {kind:'view_w'}, {kind:'view_e'}, {kind:'view_s'}] : batch === 'props' ? [{kind:'hero'}] : null;
     const out = [];
     for (const item of list) {
+      const kinds = batch === 'characters' ? [...VIEWS, ...EXPRS] : batch === 'locations' ? (item.structure==='a' ? [{kind:'a_establishing'},{kind:'a_plan'},{kind:'a_view_w'},{kind:'a_view_e'},{kind:'a_view_s'}] : [{kind:'plan'}, {kind:'view_n'}, {kind:'view_w'}, {kind:'view_e'}, {kind:'view_s'}]) : batch === 'props' ? [{kind:'hero'}] : null;
       if (batch === 'storyboard') {
         if (!desk.stills[`${item.id}:frame`]) out.push({batch, id: item.id, kind: 'frame', label: item.scene_heading || '分镜'});
         if ((item.composition === '过肩镜头') && item.ots_from && item.ots_to && !desk.stills[`${item.id}:reverse`]) out.push({batch, id: item.id, kind: 'reverse', label: '反打'});
@@ -516,6 +525,11 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
         if (!['done','failed'].includes(result.job?.status)) throw Error('结果待核对，后续队列已停止；请刷新图库，不要重复提交');
         commit(()=>delete d().pending[key]);
         if (result.job.status !== 'done' || !result.item) throw Error('这张图片未生成，后续队列已停止');
+        if (job.batch==='locations' && d().viewQa && /^view_/.test(job.kind)) {
+          commit(()=>{ (d().qaHold||={})[key]=result.item; (d().qaNotes||={})[job.id]=VIEW_QA_FAIL+' qa-unreadable'; });
+          message='白膜质检还没通过，格子不更新';
+          continue;
+        }
         commit(()=>acceptImage(getProject(),d(),key,result.item));
         await attachImage(job.id,job.kind,result.item,token);
         if (alive(token)) message = `已完成 ${i+1} / ${jobs.length} 张，图片已存入个人图库`;
@@ -605,7 +619,7 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
       if (el.dataset.pcField === 'title') { commit(()=>{ getProject().title = el.value.trim().slice(0, 80) || '未命名'; }); return; }
       if (el.dataset.pcEmotion && el.dataset.beat) { commit(()=>{ const b=d().beats.find(b=>b.id===el.dataset.beat); if(b){ (b.emotions ||= {})[el.dataset.pcEmotion] = el.value; } }); return; }
       if (el.dataset.pcField === 'episodeStyle') { commit(()=>{ (d().episodeStyles ||= {})[d().episode]=el.value.slice(0,2000); }); return; }
-      if (el.dataset.pcField === 'forceChar') { commit(()=>{ d().forceChar = el.checked; }); return; }
+      if (el.dataset.pcField === 'forceChar' || el.dataset.pcField === 'viewQa') { commit(()=>{ d()[el.dataset.pcField] = el.checked; }); return; }
       if (el.dataset.pcGrade) { commit(()=>{ (d().grades[el.dataset.id] ||= {})[el.dataset.pcGrade] = el.value; }); return; }
       if (el.dataset.pcSlotGrade && preview) { commit(()=>{ (d().slotGrades[`${preview.id}:${preview.kind}`] ||= {})[el.dataset.pcSlotGrade] = el.value; }); return; }
       if (el.dataset.pcRef && el.dataset.beat) { commit(()=>{ const b=d().beats.find(b=>b.id===el.dataset.beat); if(b)(b.refChoices ||= {})[el.dataset.pcRef] = el.value; }); return; }
@@ -661,6 +675,15 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
       if (dest && dest !== pageKind) goto(dest);
       else paint();
       return;
+    }
+    if (act === 'loc-structure') { commit(()=>{ const row=d().locations.find(x=>x.id===btn.dataset.id); if(row) row.structure=btn.dataset.mode==='a'?'a':'b'; }); return; }
+    if (act === 'apply-qa') {
+      const loc=d().locations.find(x=>x.id===btn.dataset.id); if(!loc) return;
+      let parsed; try{parsed=JSON.parse(host.querySelector(`[data-pc-qa="${loc.id}"]`)?.value||'')}catch{toast('核对结果不是 JSON');return}
+      const qa=judgeViewQa(expectedViewRules(layoutFromText(loc.name||'房间', loc.heading||'内景', loc.description||''), 1), parsed);
+      const note=qa.pass?'合格图可以进格子':[VIEW_QA_FAIL,...qa.errors].join(' ');
+      commit(()=>{ (d().qaNotes||={})[loc.id]=note; const held=d().qaHold?.[`${loc.id}:view_n`]; if(qa.pass&&held&&shouldPersistViewStill(held.id||'held',qa)) acceptImage(getProject(),d(),`${loc.id}:view_n`,held); if(!qa.pass) delete (d().qaHold||={})[`${loc.id}:view_n`]; });
+      toast(note); return;
     }
     if (act === 'aspect') {
       commit(() => { const desk=d(); const aspect=setEpisodeAspect(desk, desk.episode, btn.dataset.id); for (const b of desk.beats) if (b.episode===desk.episode) b.ratio=aspect; syncShots(getProject(), desk); });
