@@ -1,4 +1,4 @@
-import {AccountError,safeOrigin} from './security.mjs';
+import {AccountError,allowBearerOrigin} from './security.mjs';
 
 const ASPECTS=new Set(['16:9','9:16','1:1','4:3','3:2','2:3']);
 const MAX_VIDEO_BYTES=40*1024*1024;
@@ -32,7 +32,7 @@ export function createGrokVideoHandler(env=process.env){
    if(!key)return json({ok:false,error:'出视频服务还没接上'},503);
    const base=baseOf(env);
    if(req.method==='POST'){
-    safeOrigin(req);
+    allowBearerOrigin(req);
     const body=await req.json().catch(()=>null);
     const prompt=String(body?.prompt||'').slice(0,4000).trim();
     if(!prompt)return json({ok:false,error:'没有画面要求'},400);
