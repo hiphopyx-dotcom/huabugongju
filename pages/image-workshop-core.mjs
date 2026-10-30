@@ -1,3 +1,4 @@
+import {wardrobeLockPrompt, isCharacterFollowKind} from './wardrobe-lock.mjs?v=port9';
 // Local-only adapter for sunny-terra's real /api/backup -> createUserBackup
 // contract at d0daeebb40009982b84a043e8dc2f8811134d23e. Never upload/persist the
 // original backup: jingben_members may include password hashes. A local file
@@ -377,6 +378,8 @@ export function buildImageWorkshopPrompt(category, fields = {}) {
   if (category === 'characters') {
     parts.push('单人角色定妆照，整个画面只有一人，没有第二张脸、倒影或人群。', `人物身份：${[name, field('role')].filter(Boolean).join(' · ') || '剧本角色'}；姓名和职业只用于理解身份，不能印在服装上。`, `外貌：${[field('identityRegion', '中国 / 东亚面孔'), field('age'), field('gender'), field('appearance'), description].filter(Boolean).join('，')}。`, field('costume') ? `服装：${field('costume')}。` : '', charViews[kind] || field('view', '自然站姿，面向镜头。'), kind.startsWith('expr_') ? '头肩近景；眼睛、眼睑、眉毛、面颊和嘴部一起呈现真实细微表情，避免面具感。' : '', '浅灰无缝摄影棚背景，柔和均匀布光，背景不放街道、家具或其他人物。');
     if (lock) parts.push('严格固定参考图人物身份，只改变指定视角或表情；不能换脸、换年龄、换发型或换服装。');
+    parts.push(wardrobeLockPrompt({kind, costume: field('costume'), hasFrontRef: isCharacterFollowKind(kind) && refCount > 0}));
+    parts.push('Single character turnaround still. Bible identity stays on this one person; no collage, no second face.');
     parts.push('服装、徽章和证件只用空白或通用无字图形，不生成姓名、编号、英文标识或可读文字。');
   } else if (category === 'locations') {
     parts.push(`场景：${[field('heading'), name, description].filter(Boolean).join('；') || '剧本指定空间'}。`, `时间、天气、气氛：${[field('timeOfDay'), field('weather'), field('atmosphere')].filter(Boolean).join('，') || '依照剧本'}。`, '只使用剧本或参考图明确出现的建筑与物件，不新增门、床、道路、泳池或多余家具。');
@@ -392,6 +395,7 @@ export function buildImageWorkshopPrompt(category, fields = {}) {
     if (kind === 'reverse') parts.push('反打覆盖镜头：遵守180度轴线规则，在对话轴线同一侧切换正反打机位，被拍正脸与前景肩膀的角色互换，不重复主机位；保持人物朝向、视线与固定空间关系。');
     if (field('continuity')) parts.push(`连续性约束：${field('continuity')}`);
     if (lock) parts.push('使用参考图保持人物身份、服装、场景和道具一致，只改变剧本规定的动作与机位。');
+    parts.push('SCENE IS FROZEN. Copy walls, furniture, openings, and lighting from the empty location plate / 360 panorama. Add or replace ONLY the people.');
   }
   if (field('style') || field('visualStyle') || field('styleLock')) parts.push(`视觉风格：${[field('style'), field('visualStyle'), field('styleLock')].filter(Boolean).join('；')}`);
   else if (!(category === 'locations' && kind === 'plan')) parts.push('真实影视摄影质感，可信的皮肤、布料、材质和光线。');
