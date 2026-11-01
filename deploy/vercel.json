@@ -15,6 +15,9 @@
     "api/quota.js": {
       "maxDuration": 30
     },
+    "api/skills.js": {
+      "maxDuration": 30
+    },
     "api/images.js": {
       "maxDuration": 180
     },
