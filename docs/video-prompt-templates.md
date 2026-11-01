@@ -7,3 +7,5 @@
 这是提示词库接入，不安装或调用第三方 Agent 工具包，也不新增视频生成、配音或服务端渲染能力。此前研究的 video-shotcraft、ecommerce-video-skills 等项目提供了产品定位参考，本次没有复制其代码、素材或技能内容。video-talkcraft 的非商业许可证组件未引入。
 
 校验：tests/video-templates.test.mjs 覆盖六类模板、时码完整覆盖、旧工程与不同长度；tests/ui.test.mjs 覆盖独立区域、追加、替换、撤销及任务来源快照。
+
+打戏模板在总开关 `JBP_SKILLS_ENABLED=1` 时才出现，规则在 pages/fight-template.mjs。开关关闭时，上面六类模板的 `build()` 输出与正式站 public/studio 的视频模板一致，技能库、技能下拉和技能总览都不渲染。打戏提示词顺序是：参考权限、人物与武器锁定、场景与机位、分段时间轴、段尾交接、禁止项。禁止项写死，不能从生成结果里拿掉。每个技能拼入视频提示词时最多 1500 字。

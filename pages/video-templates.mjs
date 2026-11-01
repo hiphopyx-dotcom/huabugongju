@@ -13,3 +13,6 @@ export function build(p){const settings=p.settings||{},t=templates.find(t=>t.id=
  const prompt=[`【${t.name} · 视频制作提示词】`,`为「${brand}」制作${duration}秒${ratio}视频，主题：${subject}。`,`目标受众：${inputs.audience||'根据产品或服务定位，表达清晰易懂。'}`,`核心卖点：\n${inputs.sellingPoints||'仅从所提供的真实文案与素材中提炼；缺少的信息不补造。'}`,`视觉方向：${t.look}${inputs.style?'\n补充风格要求：'+inputs.style:''}`,`建议结构（${settings.videoSequence?'已有逐镜编排的时码、参考图和镜头参数优先；此结构作为文案节奏参考':'按以下时段组织内容'}）：\n${segments.map((s,i)=>`${i+1}. ${s.startSec}–${s.endSec}秒：${s.direction}`).join('\n')}`,`行动引导：${inputs.cta||'展示品牌与产品名称，邀请观众进一步了解。'}`,refs.length?'所选参考素材：\n'+refs.map((a,i)=>`${i+1}. ${a.name}${a.description?'：'+String(a.description).slice(0,500):''}`).join('\n'):'素材要求：使用上传的品牌标识、产品图、实拍视频或场景素材，确保画面与对应文案一致。','制作要求：镜头运动有目的，转场保持连贯；字幕简短、留足阅读时间并位于安全区；音乐和音效服务节奏，配音出现时降低音乐音量；保持Logo、产品外观和人物身份一致；不虚构销量、资质、价格、客户评价或承诺。'].join('\n\n');
  return {id:t.id,name:t.name,version:1,inputs,duration,ratio,referenceIds:refs.map(a=>a.id),segments,prompt};
 }
+import {FIGHT_TEMPLATE} from './fight-template.mjs';
+export {FIGHT_TEMPLATE};
+export function templatesFor(enabled){return enabled?[...templates, FIGHT_TEMPLATE]:templates}
