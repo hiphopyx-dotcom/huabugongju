@@ -11,6 +11,7 @@ import * as Guide from './shot-guide.mjs?v=bd900549f538';
 import {escapeHTML as E, imageURL, contentURL, ensureDesk, scriptWindow, applyScriptDraft, episodeNames, visibleRows, syncShots as syncProjectShots, parseEpisode, entityFor, slotImage, acceptImage, prepareStill} from './pianchang-core.mjs?v=g5desk';
 import {POSES,axisBlock,axisDistance,dummySVG} from './pianchang-axis.mjs?v=bd900549f538';
 import * as L from './shot-language.mjs?v=bd900549f538';
+import {hydrateAuthedImages} from './api-client.mjs?v=port9';
 
 const ASPECTS = [{id:'1:1',label:'1:1'},{id:'3:4',label:'3:4'},{id:'16:9',label:'16:9'},{id:'9:16',label:'9:16'}];
 const RESOLUTIONS = [{id:'1k',label:'1K'},{id:'2k',label:'2K'}];
@@ -150,6 +151,7 @@ export function createPianchangDesk({getProject, getUser = () => null, change, t
     const desk = d();
     const tab = desk.tab;
     host.innerHTML = `<div class="pc-desk">${shell(p, desk, tab)}${picker ? pop(picker) : ''}${grokPop()}${preview ? imageDialog(preview) : ''}${historyView ? historyDialog(historyView) : ''}</div>`;
+    void hydrateAuthedImages(host);
     for(const el of host.querySelectorAll('[data-pc-detail]')) if(detailState.has(el.dataset.pcDetail))el.open=detailState.get(el.dataset.pcDetail);
     if (scroller) scroller.scrollTop = y;
     if (cite && tab === 'script') focusSource();
