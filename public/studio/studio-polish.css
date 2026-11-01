@@ -63,13 +63,19 @@ button:hover:not(:disabled) {
 }
 button:active:not(:disabled) { transform: translateY(1px); }
 button:disabled { color: #7b8796; opacity: .58; cursor: not-allowed; }
-button.primary,
-button.active:not(.nav):not(.tab):not(.pc-tabs button):not(.pc-pills button) {
+button.primary {
   color: #211b12;
   background: linear-gradient(180deg, #efd2a0, #dcb476);
   border: 1px solid #f3d7a8;
   font-weight: 700;
   box-shadow: 0 4px 18px #d0a45c20;
+}
+/* Selected options remain dark, so nested helper text is readable. */
+button.active:not(.nav) {
+  background: #3a332a;
+  color: #f4d8a9;
+  border-color: #907955;
+  box-shadow: inset 0 0 0 1px #e3bc7e18;
 }
 button.primary:hover:not(:disabled) {
   background: linear-gradient(180deg, #ffe0ac, #ebc18a);
