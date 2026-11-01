@@ -1,6 +1,14 @@
 // 导出 /bench 静态副本。同源正式版不跑这个脚本。预览站由用户自己发布。
+// BENCH_API_BASE 覆盖预览工作台要连接的后台，默认是独立 zinc 后端。
 import fs from 'node:fs/promises';
 import path from 'node:path';
+
+const DEFAULT_BENCH_API_BASE = 'https://jubaopeng-zinc.vercel.app';
+const apiBase = (process.env.BENCH_API_BASE || DEFAULT_BENCH_API_BASE).trim();
+let parsed;
+try { parsed = new URL(apiBase); }
+catch { throw new Error('BENCH_API_BASE 必须是精确的 HTTPS 源'); }
+if (parsed.protocol !== 'https:' || parsed.origin !== apiBase) throw new Error('BENCH_API_BASE 必须是精确的 HTTPS 源');
 
 const root = process.cwd();
 const out = path.join(root, 'bench-export');
@@ -10,8 +18,8 @@ const indexPath = path.join(out, 'index.html');
 let index = await fs.readFile(indexPath, 'utf8');
 const meta = [
   '<meta name="studio-account-service" content="enabled">',
-  '<meta name="studio-api-base" content="https://jubaopeng-canvas.vercel.app">',
-  '<meta http-equiv="Content-Security-Policy" content="connect-src \'self\' https://jubaopeng-canvas.vercel.app">',
+  `<meta name="studio-api-base" content="${apiBase}">`,
+  `<meta http-equiv="Content-Security-Policy" content="connect-src 'self' ${apiBase}">`,
 ].join('');
 if (!index.includes('studio-api-base')) index = index.replace('<head>', '<head>' + meta);
 index = index.replace('GitHub Pages 不提供后端', '已接入正式版后台');
