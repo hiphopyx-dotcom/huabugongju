@@ -24,7 +24,7 @@ test('node renderer uses existing assets and never invents image sources',()=>{
   assert.doesNotMatch(html,/canvas-node-empty/);
   const empty=card({...base,type:'image',assetIds:[],resultAssetId:undefined},ctx);
   assert.match(empty,/canvas-node-empty/);
-  assert.match(empty,/待配置/);
+  assert.match(empty,/待生成/);
 });
 
 test('untrusted prompt and node names are text, not inserted HTML',()=>{
