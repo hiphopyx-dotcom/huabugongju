@@ -27,6 +27,8 @@ export const IMAGE_SLOTS = freeze({
  storyboard: [{id:'frame',label:'主机位',ratio:'16:9'},{id:'reverse',label:'反打',ratio:'16:9'}],
 });
 
+// Creative style descriptions follow the original workshop; labels and prompts
+// intentionally contain no model/provider identities.
 export const LOOK_STYLES = freeze([
   {
     id: "lookbook",
@@ -239,11 +241,17 @@ export const EMOTIONS = PORTRAIT_EMOTIONS;
 export const IMAGE_ENTITY_FIELDS = freeze(['description','role','identityRegion','age','gender','appearance','costume','material','usedBy','heading','timeOfDay','weather','atmosphere','worldAnchors','extraPrompt']);
 const fieldCopy = source => Object.fromEntries(IMAGE_ENTITY_FIELDS.map(key => [key,text(source?.[key])]));
 const episodeOf = source => text(source?.episode ?? source?.episodeId ?? source?.episode_id);
-const entityKey = entity => [entity.category,entity.scope,entity.scope === 'episode' ? entity.episode : '',entity.category === 'storyboard' ? text(entity.id) : nameKey(entity.name)].join('\\u0000');
+const entityKey = entity => [entity.category,entity.scope,entity.scope === 'episode' ? entity.episode : '',entity.category === 'storyboard' ? text(entity.id) : nameKey(entity.name)].join('\u0000');
 const isDeleted = item => !item || item.deleted === true || !!item.deletedAt || !!item.deleted_at || item.isDeleted === true;
 
 export function freshImageWorkspace() {return {entities:[],style:'',portraitStyle:''};}
 
+/**
+ * Returns a new creative-only entity list. Persist the result in
+ * project.imageWorkspace.entities after deriving it so newly allocated IDs stay
+ * stable. Existing workspace fields win over descriptions from reference assets.
+ * Only explicit asset types / shot name lists / scene headings are read.
+ */
 export function deriveImageEntities(project, uuid = () => globalThis.crypto.randomUUID()) {
  if (!object(project) || typeof uuid !== 'function') throw Error('项目或编号生成器无效');
  const entities=[], byKey=new Map(), byId=new Map(), shots=list(project.shots).filter(s => object(s) && !isDeleted(s));
@@ -285,7 +293,7 @@ export function deriveImageEntities(project, uuid = () => globalThis.crypto.rand
    continue;
   }
   const ep=episodeOf(meta)||episodeOf(asset),scope=asset.scope === 'series' ? 'series' : asset.scope === 'episode' || ep ? 'episode' : 'series';
-  add({...asset,category,id:text(meta.entityId)||text(asset.id),name:text(meta.name)||asset.name,scope,episode:ep});
+  add({...asset,category,id:text(meta.entityId)||text(asset.id),name:text(meta.entityName)||asset.name,scope,episode:ep});
  }
  for(const [index,shot] of shots.entries()) {
   const episode=episodeOf(shot);
@@ -293,6 +301,7 @@ export function deriveImageEntities(project, uuid = () => globalThis.crypto.rand
    const names=[...list(shot[key]),...(category==='locations'&&text(shot.scene)&&shot.scene!=='未指定场景'?[shot.scene]:[])];
    for(const raw of names) {
     const name=nameKey(raw);if(!name || typeof raw!=='string')continue;
+    // A series entity explicitly covers the same named entity in every episode.
     if(byKey.has(entityKey({category,scope:'series',episode:'',name})))continue;
     add({category,name,scope:'episode',episode,fields:category==='locations'?{heading:name}:{}});
    }
@@ -330,17 +339,42 @@ function latestSlot(entity, slot, items, projectId='') {
  return list(items).filter(item => scopeMatches(entity,item,projectId) && item.metadata.slot===slot).sort((a,b)=>stamp(b)-stamp(a))[0];
 }
 
+/**
+ * mode=missing fills empty slots, mode=all plans the supplied group including
+ * filled slots. Pass only the current project's gallery, or set projectId.
+ * Series entities remain eligible while filtering an episode.
+ */
+export function planImageBatch({category,entities=[],items=[],mode='missing',episode,projectId}={}) {
+ category=categoryOf(category);if(!category)throw Error('请选择图片类型');
+ if(!['missing','all'].includes(mode))throw Error('批量模式应为 missing 或 all');
+ const result=[],seen=new Set();
+ for(const entity of list(entities)) {
+  if(!object(entity)||entity.category!==category||!text(entity.id)||isDeleted(entity))continue;
+  if(episode!==undefined && episode!==null && episode!=='' && entity.scope!=='series' && text(entity.episode)!==text(episode))continue;
+  for(const slot of IMAGE_SLOTS[category]) {
+   if(category==='storyboard'&&slot.id==='reverse'&&!entity.hasReverse)continue;
+   const key=entity.id+'\u0000'+slot.id;if(seen.has(key))continue;seen.add(key);
+   if(mode==='all'||!latestSlot(entity,slot.id,items,projectId))result.push({entityId:entity.id,slot:slot.id});
+  }
+ }
+ return result;
+}
+
+/** Latest canonical identity/structure references only. The caller supplies this
+ * project's items (or entity.projectId); never returns image bytes or identities.
+ * A scene plan anchors all four directions; the N still adds finished art detail.
+ * A character faceLockId, when that image is still in the supplied list, replaces
+ * the front identity reference for every character slot including front.
+ */
 export function imageSlotReferences(entity, slot, items=[]) {
  if(!object(entity)||!categoryOf(entity.category))throw Error('图片实体无效');
  slot=slotOf(entity.category,slot).id;
  const candidates=[];
  if(entity.category==='characters'){
-  if(entity.faceLockId) {
-   const locked=list(items).find(item=>item.id===entity.faceLockId);
-   if(locked)candidates.push(locked);
-  } else if(slot!=='front') {
-   candidates.push(latestSlot(entity,'front',items));
-  }
+  const lockedId=typeof entity.faceLockId==='string'?entity.faceLockId:'';
+  const locked=lockedId?list(items).find(item=>item&&item.id===lockedId&&!isDeleted(item)&&!['failed','running','cancelled'].includes(item.status)):null;
+  if(locked)candidates.push(locked);
+  else if(slot!=='front')candidates.push(latestSlot(entity,'front',items));
  }
  if(entity.category==='locations'&&slot!=='plan') {
   candidates.push(latestSlot(entity,'plan',items));
@@ -375,6 +409,11 @@ function portraitPrompt(value) {
  return selected.length?'人物质感与表演：'+selected.join('; ')+'. 保持身份、服装和机位，只改变所选质感或表情。':'';
 }
 
+/**
+ * Returns the production template plus complete storyboard params/assetIds.
+ * It never edits the source shot or action/dialogue. OTS reverse requires two
+ * distinct valid character reference images via the shared storyboard validator.
+ */
 export function buildWorkflowPrompt(project, entity, slot, options={}) {
  if(!object(project)||!object(entity))throw Error('项目或图片实体无效');
  const category=categoryOf(entity.category);slot=slotOf(category,slot);
@@ -386,7 +425,7 @@ export function buildWorkflowPrompt(project, entity, slot, options={}) {
  const force=options.forceAspect===true;
  let aspect=slot.ratio;
  if(category==='locations'&&slot.id!=='plan'||category==='storyboard'||category==='characters'&&force)aspect=options.aspect||settings.ratio||slot.ratio;
- const extra=[fields.extraPrompt,text(options.extraPrompt),portrait].filter(Boolean).join('\\n');
+ const extra=[fields.extraPrompt,text(options.extraPrompt),portrait].filter(Boolean).join('\n');
  let shotData=null;
  const input={...fields,name:text(entity.name),kind:slot.id,aspect,style,styleLock:text(settings.storyStyle),referenceCount:refCount,referenceIdentity:options.referenceIdentity!==false,extraPrompt:extra};
  if(category==='storyboard') {
@@ -400,9 +439,10 @@ export function buildWorkflowPrompt(project, entity, slot, options={}) {
  }
  const result=buildImageWorkshopPrompt(category,input);
  if(shotData) {
-  result.prompt+='\\n完整分镜参数与原文：\\n'+shotData.prompt;
+  result.prompt+='\n完整分镜参数与原文：\n'+shotData.prompt;
   result.params={...shotData.params,ratio:result.aspect};
   result.assetIds=[...shotData.assetIds];
  }
  return result;
 }
+
