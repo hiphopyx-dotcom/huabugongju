@@ -73,6 +73,47 @@ export async function submitWithRecheck({find, enabled, hasText, click, responde
 }
 /** grok.com/imagine offers 2:3, 3:2, 1:1, 9:16, 16:9; the workbench also offers 3:4 and 4:3. */
 export const GROK_RATIOS = ['2:3', '3:2', '1:1', '9:16', '16:9'];
+export const STRUCTURE_STEPS = Object.freeze(['打开页面', '切图片', '选宽高比', '找输入框', '输入', '上传参考图', '改图', '提交', '等图', '下载']);
+export function structureStop(step, definite = true) {
+  const e = new MemberStop('STRUCTURE', definite);
+  e.step = step;
+  e.detail = '网页结构变化：' + step;
+  return e;
+}
+/** Reads a page hint such as 「最多 3 张」. Returns null when the page does not say. */
+export function limitFromText(text) {
+  const found = /最多\s*([1-9]\d?)\s*张|up to\s*([1-9]\d?)\s*(?:images|photos)/i.exec(String(text || ''));
+  if (!found) return null;
+  const n = Number(found[1] || found[2]);
+  return n > 0 && n <= 3 ? n : null;
+}
+/** Decides a single upload. A missing or non-image control is a structure change, not a retry. */
+export function planReferenceUpload({count, control}) {
+  if (!control) return {ok: false, structure: true};
+  const accept = String(control.accept || '');
+  if (accept && !/image|png|jpe?g|webp/i.test(accept)) return {ok: false, structure: true};
+  const stated = Number.isInteger(control.max) && control.max > 0 ? control.max : null;
+  const limit = control.multiple ? (stated ?? count) : 1;
+  if (count > limit) return {ok: false, reason: 'REF_LIMIT', limit};
+  return {ok: true, limit};
+}
+/**
+ * Sets the page's file input once. If it is missing, reveals it at most once.
+ * A still-missing or changed control stops with 网页结构变化 and does not try again.
+ */
+export async function attachReferences({files, step = '上传参考图', findControl, reveal, setFiles}) {
+  if (!files?.length) return {uploaded: 0};
+  let control = await findControl();
+  if (!control && reveal) {
+    const opened = await reveal();
+    if (opened) control = await findControl();
+  }
+  if (!control) throw structureStop(step);
+  const plan = planReferenceUpload({count: files.length, control});
+  if (!plan.ok) throw plan.structure ? structureStop(step) : Object.assign(new MemberStop(plan.reason || 'REF_LIMIT', true), {step, detail: plan.limit ? `网页当前允许 ${plan.limit} 张` : ''});
+  try {await setFiles(control, files);} catch {throw structureStop(step);}
+  return {uploaded: files.length, limit: plan.limit};
+}
 export function grokRatio(ratio) {
   if (!ratio || GROK_RATIOS.includes(ratio)) return ratio || '';
   const [w, h] = String(ratio).split(':').map(Number);
@@ -84,7 +125,21 @@ export function grokRatio(ratio) {
 export const PROMPT_BOX = /向 Grok 提任何问题|Ask Grok anything|Ask anything|描述|Describe/i;
 export const IMAGE_MODE = /^(图片|Image)$/;
 export const SUBMIT = /^(提交|Submit|发送|Send)$/i;
-export const STEPS = ['打开页面', '切图片', '选宽高比', '找输入框', '输入', '提交', '等图', '下载'];
+export const STEPS = STRUCTURE_STEPS;
+async function readFileControl(page) {
+  const inputs = page.locator('input[type="file"]');
+  const n = await inputs.count().catch(() => 0);
+  for (let i = 0; i < n; i++) {
+    const locator = inputs.nth(i);
+    const accept = (await locator.getAttribute('accept').catch(() => '')) || '';
+    if (accept && !/image|png|jpe?g|webp/i.test(accept)) continue;
+    const multiple = (await locator.getAttribute('multiple').catch(() => null)) != null;
+    const maxAttr = await locator.getAttribute('data-max').catch(() => '');
+    const max = /^[1-9]\d?$/.test(maxAttr || '') ? Number(maxAttr) : null;
+    return {locator, accept, multiple, max};
+  }
+  return null;
+}
 async function stopIfBlocked(page) {
   if (await visible(page.locator('iframe[src*="challenges.cloudflare.com"], iframe[title*="challenge" i], iframe[src*="captcha" i]'))) throw new MemberStop('CAPTCHA');
   if (await visible(page.getByRole('button', {name: /^(登录|sign in|log in)$/i})) || await visible(page.getByRole('link', {name: /^(登录|sign in|log in)$/i}))) throw new MemberStop('LOGIN');
@@ -109,10 +164,11 @@ export async function openProfile({chromium, profileDir}) {
 }
 
 /** Runs one prompt on grok.com/imagine and returns the original image bytes. */
-export async function imagineOnce(context, {prompt, ratio}, {timeoutMs = 240000, log = () => {}, dryRun = false} = {}) {
+export async function imagineOnce(context, {prompt, ratio, files = [], uploadStep = '上传参考图'}, {timeoutMs = 240000, log = () => {}, dryRun = false} = {}) {
   let current = '', submitted = false;
   const step = name => {current = name; log('步骤：' + name);};
   const fail = (reason = 'PAGE', definite = true) => {const e = new MemberStop(reason, definite); e.step = current; return e;};
+  const structure = (name, definite = true) => structureStop(name || current, definite);
   try {
     const page = context.pages()[0] || await context.newPage();
     step('打开页面');
@@ -122,29 +178,45 @@ export async function imagineOnce(context, {prompt, ratio}, {timeoutMs = 240000,
     if (cookie) {await cookie.click(); await humanPause(page);}
     await stopIfBlocked(page);
     const findBox = () => page.getByRole('textbox', {name: PROMPT_BOX}).or(page.locator('[contenteditable="true"], textarea'));
-    if (!await waitVisible(page, findBox, 30000)) {await stopIfBlocked(page); throw fail();}
+    if (!await waitVisible(page, findBox, 30000)) {await stopIfBlocked(page); throw structure('打开页面');}
     step('切图片');
     const imageMode = await waitVisible(page, () => page.getByRole('radio', {name: IMAGE_MODE}).or(page.getByRole('button', {name: IMAGE_MODE})), 10000);
-    if (!imageMode) throw fail();
+    if (!imageMode) throw structure('切图片');
     if (await imageMode.getAttribute('aria-checked') !== 'true') {await imageMode.click(); await humanPause(page);}
-    if (await imageMode.getAttribute('aria-checked') === 'false') throw fail();
+    if (await imageMode.getAttribute('aria-checked') === 'false') throw structure('切图片');
     const want = grokRatio(ratio);
     if (want) {
       step('选宽高比');
       const picker = await waitVisible(page, () => page.getByRole('button', {name: /宽高比|aspect ratio/i}), 10000);
-      if (!picker) throw fail();
+      if (!picker) throw structure('选宽高比');
       if (!(await picker.innerText().catch(() => '')).includes(want)) {
         await picker.click(); await humanPause(page);
         const name = new RegExp('^\\s*' + want.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\s|$)');
         const option = await waitVisible(page, () => page.getByRole('menuitemradio', {name}).or(page.getByRole('menuitem', {name})).or(page.getByRole('option', {name})), 5000);
-        if (!option) throw fail();
+        if (!option) throw structure('选宽高比');
         await option.click(); await humanPause(page);
         if (await picker.getAttribute('data-state') === 'open') await page.keyboard.press('Escape').catch(() => {});
       }
     }
     step('找输入框');
     const box = await waitVisible(page, findBox, 10000);
-    if (!box) throw fail();
+    if (!box) throw structure('找输入框');
+    if (files.length) {
+      step(uploadStep);
+      const hint = limitFromText(await page.locator('body').innerText().catch(() => ''));
+      await attachReferences({
+        files, step: uploadStep,
+        findControl: async () => {const control = await readFileControl(page); if (control && hint && control.max == null) control.max = hint; return control;},
+        reveal: async () => {
+          const button = await visible(page.getByRole('button', {name: /上传图片|添加图片|添加参考|attach image|upload image/i}));
+          if (!button) return false;
+          await button.click();
+          await humanPause(page);
+          return true;
+        },
+        setFiles: (control, list) => control.locator.setInputFiles(list),
+      });
+    }
     step('输入');
     await box.click(); await humanPause(page, 400, 900);
     await page.keyboard.type(prompt.trim(), {delay: rand(25, 60)});
@@ -185,7 +257,7 @@ export async function imagineOnce(context, {prompt, ratio}, {timeoutMs = 240000,
     step('下载');
     await humanPause(page);
     const bytes = await downloadOriginal(page, pick.src);
-    if (!bytes?.length) throw fail('PAGE', false);
+    if (!bytes?.length) throw structure('下载', false);
     return {bytes, width: pick.w, height: pick.h};
   } catch (error) {
     let out = error;
@@ -227,7 +299,7 @@ export function sniff(bytes) {
 /** Keeps the original in the archive folder and returns a JPEG/PNG at or under 3MB. */
 export async function saveAndCompress(bytes, {id, archiveDir, limit = IMAGE_BYTES, sips = (...a) => run('/usr/bin/sips', a)}) {
   const type = sniff(bytes);
-  if (!type) throw new MemberStop('PAGE', false);
+  if (!type) throw structureStop('下载', false);
   await fs.mkdir(archiveDir, {recursive: true});
   const original = path.join(archiveDir, `${id}-original.${type.ext}`);
   await fs.writeFile(original, bytes);

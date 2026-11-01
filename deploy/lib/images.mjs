@@ -27,7 +27,8 @@ function creativeMetadata(value){
  }
  return result;
 }
-function metadataDto(value){const result={};if(object(value))for(const key of METADATA_KEYS)if(typeof value[key]==='string')result[key]=value[key];return result;}
+const ACCOUNT_LABEL=/^[\p{L}\p{N}_-]{1,32}$/u,WORKER_ID=/^[a-z][a-z0-9-]{0,31}$/;
+function metadataDto(value){const result={};if(object(value)){for(const key of METADATA_KEYS)if(typeof value[key]==='string')result[key]=value[key];if(typeof value.accountLabel==='string'&&ACCOUNT_LABEL.test(value.accountLabel))result.accountLabel=value.accountLabel;if(typeof value.workerId==='string'&&WORKER_ID.test(value.workerId))result.workerId=value.workerId;}return result;}
 function workspaceText(value){if(typeof value!=='string'||value.length>8000||/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value))fail('创作内容格式无效');return value;}
 function workspaceData(value){
  keys(value,['entities','style','portraitStyle']);if(!Array.isArray(value.entities)||value.entities.length>300)fail('工作区最多保存300个实体');
@@ -220,14 +221,14 @@ export function createImageHandler(query,config={}){
     const row=await one('SELECT studio_image_import($1,$2,$3,$4::jsonb,$5) AS item',user.id,sessionHash,user.session_version,JSON.stringify(saved),now());
     const current=await image(user.id,row.item.id);if(!current)fail('图片已不可用',409);return json({item:dto(current),wallet:await quota.summary(user.id)},201);
    }
-   const references=[],referenceIds=[];
+   let sourceIndex=-1;const references=[],referenceIds=[];
    for(const ref of data.references){keys(ref,Object.hasOwn(ref||{},'id')?['id']:['dataUrl']);if(Object.hasOwn(ref,'id')){
-     if(typeof ref.id!=='string'||!UUID.test(ref.id))fail('参考图片标识无效');const saved=await image(user.id,ref.id,true);if(!saved)fail('参考图片不存在或无权访问',404);references.push(validateImageData(saved.data_url).dataUrl);referenceIds.push(ref.id);
+     if(typeof ref.id!=='string'||!UUID.test(ref.id))fail('参考图片标识无效');const saved=await image(user.id,ref.id,true);if(!saved)fail('参考图片不存在或无权访问',404);if(data.metadata?.parentImageId===ref.id&&sourceIndex<0)sourceIndex=references.length;references.push(validateImageData(saved.data_url).dataUrl);referenceIds.push(ref.id);
     }else references.push(validateImageData(ref.dataUrl,IMAGE_LIMITS.referenceBytes).dataUrl)}
    const inputHash=hash(JSON.stringify({...data,references:references.map(hash)}));
    if(await useMac()){
     const state=await worker.status();if(!state.configured)fail('等待 Mac 执行器：管理员尚未配置出图端',409);
-    const rates=await quota.rates(),start=await worker.submit({user,sessionHash,data,inputHash,amount:rates.image,references,referenceIds,origin:url.origin});
+    const rates=await quota.rates(),start=await worker.submit({user,sessionHash,data,inputHash,amount:rates.image,references,referenceIds,sourceIndex,origin:url.origin});
     const current=start.job.item_id?await image(user.id,start.job.item_id):null;
     return json({job:await publicJob(user.id,start.job),...(current?{item:dto(current)}:{}),wallet:await quota.summary(user.id)},start.started?202:200);
    }
