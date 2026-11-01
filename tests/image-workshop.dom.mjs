@@ -51,7 +51,7 @@ function fixture(t, configure = () => {}) {
     if(state.requestImpl){const result=state.requestImpl(call);if(result!==undefined)return await result;}
     if(action==='status')return {configured:state.configured,rates:{image:1800},wallet:{available:9000},jobs:structuredClone(state.jobs)};
     if(action==='list')return {items:structuredClone(state.items),jobs:structuredClone(state.jobs),total:state.items.length};
-    if(action==='import')return {item:image('imported-image',body.name)};
+    if(action==='import')return {item:{...image('imported-image',body.name),kind:body.kind,source:'imported',created:Date.now()}};
     if(action==='generate')return {job:{status:'done',requestId:body.requestId}};
     throw Error('unexpected request '+action);
   };
@@ -314,4 +314,39 @@ test('legacy import preserves stable entity slots and copies only selected creat
  assert.doesNotMatch(f.host.querySelector('[data-image-message]').textContent,/已导入 1 张/);
  saveGate.resolve({version:1,workspace:settings.body.workspace});
  await waitFor(()=>/已导入 1 张/.test(f.host.querySelector('[data-image-message]').textContent),'workspace-backed import completion');
+});
+
+test('external completed-image upload imports original pixels and automatically uses current project, without generate', async t=>{
+ const f=fixture(t);
+ await tick();
+ assert.ok(f.host.querySelector('[data-image-action="upload-completed"]'));
+ const kind=f.host.querySelector('[data-image-completed-kind]');
+ kind.value='场景';kind.dispatchEvent(new f.window.Event('change',{bubbles:true}));
+ const shot=f.host.querySelector('[data-image-completed-shot]');
+ shot.value='shot-a';shot.dispatchEvent(new f.window.Event('change',{bubbles:true}));
+ const file=new f.window.File([Buffer.from(png.split(',')[1],'base64')],'external-finished.png',{type:'image/png'});
+ const control=f.host.querySelector('[data-image-completed-upload]');
+ Object.defineProperty(control,'files',{configurable:true,value:[file]});
+ control.dispatchEvent(new f.window.Event('change',{bubbles:true}));
+ await waitFor(()=>f.state.uses.length===1,'completed image to be added to active project');
+ const records=f.state.calls.filter(v=>v.action==='import');
+ assert.equal(records.length,1);
+ assert.equal(f.state.calls.filter(v=>v.action==='generate').length,0);
+ assert.equal(records[0].body.kind,'场景');
+ assert.equal(records[0].body.prompt,'');
+ assert.equal(records[0].body.name,'external-finished.png');
+ assert.match(records[0].body.dataUrl,/^data:image\/png;base64,/);
+ assert.equal(f.state.uses[0].options.shotId,'shot-a');
+ assert.equal(f.state.uses[0].options.expected,'user-a:project-a');
+ assert.equal(f.state.uses[0].item.source,'imported');
+ await waitFor(()=>f.host.querySelector('[data-image-completed-upload]')&&!f.host.querySelector('[data-image-completed-upload]').disabled,'upload to finish');
+ assert.match(f.host.textContent,/不扣生成额度/);
+});
+test('completed-image import stays available when model configuration is missing',async t=>{
+ const f=fixture(t,s=>{s.configured=false});
+ await tick();
+ assert.ok(f.host.querySelector('[data-image-action="upload-completed"]'));
+ assert.ok(f.host.querySelector('[data-image-completed-upload]'));
+ const gen=f.host.querySelector('[data-image-generate]');
+ assert.equal(gen.disabled,true);
 });
