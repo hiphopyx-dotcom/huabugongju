@@ -6,4 +6,39 @@ test('远端文字作为单个CLI参数传递，不解释Shell或附加模型参
 
 test('本机执行端按原样传递参数，并识别空返回、超时和超大输出',async()=>{const {executeText}=await import('./worker.mjs');const fs=await import('node:fs/promises'),os=await import('node:os'),path=await import('node:path');const root=await fs.mkdtemp(path.join(os.tmpdir(),'jbp-worker-test-'));const binary=path.join(root,'grok-fixture'),profile={cwd:root,home:root};try{await fs.writeFile(binary,'#!/usr/bin/env node\nconsole.log(JSON.stringify(process.argv.slice(2)))\n',{mode:0o700});const p='--always-approve $(touch /tmp/should-not-exist)';const out=await executeText(binary,profile,p);assert.equal(JSON.parse(out.result).at(-1),'--single='+p);await fs.writeFile(binary,'#!/usr/bin/env node\nprocess.exit(0)\n');assert.equal((await executeText(binary,profile,'test')).error,'EMPTY_RESULT');await fs.writeFile(binary,'#!/usr/bin/env node\nsetTimeout(()=>{},20000)\n');assert.equal((await executeText(binary,profile,'test',{timeoutMs:80})).error,'TIMEOUT');await fs.writeFile(binary,'#!/usr/bin/env node\nprocess.stdout.write("x".repeat(70000))\n');assert.equal((await executeText(binary,profile,'test')).error,'RESULT_TOO_LARGE')}finally{await fs.rm(root,{recursive:true,force:true})}});
 
+test('默认超时 20 秒，环境变量可覆盖，退避有上限，告警带状态码，401 仍暂停账户',async()=>{
+ const {workerTimeoutMs,retryDelayMs,describeTransportFailure,workerWarning,startWorker}=await import('./worker.mjs');
+ assert.equal(workerTimeoutMs({}),20000);
+ assert.equal(workerTimeoutMs({JBP_WORKER_TIMEOUT_MS:''}),20000);
+ assert.equal(workerTimeoutMs({JBP_WORKER_TIMEOUT_MS:'45000'}),45000);
+ for(const bad of ['0','999','-1','abc','20.5',' 20 '])assert.equal(workerTimeoutMs({JBP_WORKER_TIMEOUT_MS:bad}),20000,bad);
+ assert.equal(workerTimeoutMs({JBP_WORKER_TIMEOUT_MS:'120000'}),120000);
+ assert.equal(workerTimeoutMs({JBP_WORKER_TIMEOUT_MS:'120001'}),120000);
+ assert.deepEqual([0,1,2,3,4,5,8].map(n=>retryDelayMs(n,()=>0)),[1000,2000,4000,8000,16000,30000,30000]);
+ assert.equal(retryDelayMs(0,()=>.5),1500);
+ assert.equal(retryDelayMs(5,()=>1),30000);
+ assert.equal(describeTransportFailure(Object.assign(Error('getaddrinfo'),{code:'ENOTFOUND'})).type,'DNS');
+ assert.equal(describeTransportFailure(Object.assign(Error('unexpected redirect'),{name:'TypeError'})).type,'重定向');
+ assert.equal(describeTransportFailure({name:'TimeoutError',message:'The operation was aborted due to timeout'}).type,'超时');
+ assert.match(workerWarning({type:'5xx',status:503}),/5xx，HTTP 503/);
+ assert.match(workerWarning({type:'校验失败',status:200}),/校验失败，HTTP 200/);
+ const fs=await import('node:fs/promises'),os=await import('node:os'),path=await import('node:path');
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'jbp-backoff-'));
+ const logs=[],original=console.log;console.log=(...a)=>logs.push(a.join(' '));
+ const originalFetch=globalThis.fetch;const waits=[];let step=0;
+ try{
+  const binary=path.join(root,'runtime','node_modules','.bin','grok');await fs.mkdir(path.dirname(binary),{recursive:true});await fs.writeFile(binary,'#!/usr/bin/env node\n',{mode:0o700});
+  const {prepareProfile}=await import('./core.mjs');const profile=await prepareProfile(root,'测试账户');
+  await fs.writeFile(path.join(profile.home,'auth.json'),JSON.stringify({'https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828':{email:'fixture@example.test',user_id:'fixture-user'}}));
+  await fs.mkdir(path.join(root,'connections'));
+  await fs.writeFile(path.join(root,'connections',good.grokAccountId+'.json'),JSON.stringify({...good,localLabel:'测试账户'}));
+  globalThis.fetch=async()=>{step++;if(step<3)return new Response('no',{status:503});return new Response(JSON.stringify({error:'revoked'}),{status:401});};
+  await startWorker(root,{random:()=>0,sleep:async ms=>{waits.push(ms)}});
+  assert.deepEqual(waits,[1000]);
+  assert.match(logs.join('\n'),/5xx，HTTP 503/);
+  assert.match(logs.join('\n'),/主账户：连接配置已撤销或失效/);
+  assert.equal(logs.some(line=>line.includes('收到文字任务')),false);
+ }finally{console.log=original;globalThis.fetch=originalFetch;await fs.rm(root,{recursive:true,force:true})}
+});
+
 test('Mac工作端通过接口领取手机号任务并返回结果，停止后不继续轮询',async()=>{const fs=await import('node:fs/promises'),os=await import('node:os'),path=await import('node:path');const {DatabaseSync}=await import('node:sqlite'),{createGenerationHandler}=await import('../../deploy/lib/generation.mjs'),{hash}=await import('../../deploy/lib/security.mjs'),{startWorker}=await import('./worker.mjs');const root=await fs.mkdtemp(path.join(os.tmpdir(),'jbp-bridge-test-')),db=new DatabaseSync(':memory:');db.exec(await fs.readFile(new URL('../../deploy/schema.sql',import.meta.url),'utf8'));const now=Date.now(),account=good.grokAccountId;db.prepare('INSERT INTO studio_grok_accounts(id,label) VALUES (?,?)').run(account,'测试账户');for(const [id,role,phone] of [['admin','admin','13800000000'],['member','user','13900000000']]){db.prepare('INSERT INTO studio_accounts(id,phone,name,password_hash,role,grok_account_id,created) VALUES (?,?,?,?,?,?,?)').run(id,phone,id,'unused',role,account,now);db.prepare('INSERT INTO studio_sessions(token_hash,user_id,version,expires) VALUES (?,?,1,?)').run(hash(id+'-session'),id,now+60000)}const query=async(sql,params)=>db.prepare(sql).all(Object.fromEntries(params.map((v,i)=>['$'+(i+1),typeof v==='boolean'?Number(v):v]))),handle=createGenerationHandler(query);const memberRequest=(action,body,who='member')=>handle(new Request(good.origin+'/api/generation?action='+action,{method:body?'POST':'GET',headers:{Origin:good.origin,Cookie:'__Host-jbp-session='+who+'-session','Content-Type':'application/json'},body:body?JSON.stringify(body):undefined}));const config=(await (await memberRequest('worker-config',{grokAccountId:account},'admin')).json()).config;const binary=path.join(root,'runtime','node_modules','.bin','grok');await fs.mkdir(path.dirname(binary),{recursive:true});await fs.writeFile(binary,'#!/usr/bin/env node\nconsole.log("WORKER_TEXT_RESULT")\n',{mode:0o700});await fs.mkdir(path.join(root,'connections'));await fs.writeFile(path.join(root,'connections',account+'.json'),JSON.stringify({...config,localLabel:'测试账户'}));const {prepareProfile}=await import('./core.mjs');const profile=await prepareProfile(root,'测试账户');await fs.writeFile(path.join(profile.home,'auth.json'),JSON.stringify({'https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828':{email:'fixture@example.test',user_id:'fixture-user'}}));const controller=new AbortController(),originalFetch=globalThis.fetch;let id,polls=0;globalThis.fetch=async(url,options)=>{const result=await handle(new Request(url,options));const action=new URL(url).searchParams.get('action');if(action==='poll')polls++;if(action==='heartbeat'&&!id){const r=await memberRequest('submit',{prompt:'写一句企业旁白',requestId:'integration-1'});assert.equal(r.status,201);id=(await r.json()).job.id}if(action==='complete')controller.abort();return result};const timer=setTimeout(()=>controller.abort(),5000);try{await startWorker(root,{signal:controller.signal});const result=await (await memberRequest('job&id='+id)).json();assert.equal(result.job.status,'done');assert.equal(result.job.result,'WORKER_TEXT_RESULT');assert.equal(polls,1)}finally{clearTimeout(timer);globalThis.fetch=originalFetch;db.close();await fs.rm(root,{recursive:true,force:true})}});
