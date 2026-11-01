@@ -20,8 +20,16 @@
     },
     "api/pianchang-video.js": {
       "maxDuration": 120
+    },
+    "api/account-bridge.js": {
+      "maxDuration": 30
     }
   },
+  "rewrites": [
+    { "source": "/api/phone-login", "destination": "/api/account-bridge?action=phone-login" },
+    { "source": "/api/whoami", "destination": "/api/account-bridge?action=whoami" },
+    { "source": "/api/backup", "destination": "/api/account-bridge?action=backup" }
+  ],
   "headers": [
     {
       "source": "/(.*)",

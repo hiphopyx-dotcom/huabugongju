@@ -105,14 +105,13 @@ test('没有数据库时三个入口都返回未配置', async () => {
   const previous = process.env.DATABASE_URL;
   delete process.env.DATABASE_URL;
   try {
-    const phone = await import('../api/phone-login.js');
-    const who = await import('../api/whoami.js');
-    const backup = await import('../api/backup.js');
-    for (const [handler, request] of [
-      [phone.POST, post('/api/phone-login', { phone: '1', password: 'x' })],
-      [who.GET, new Request(origin + '/api/whoami')],
-      [backup.GET, new Request(origin + '/api/backup')],
+    const bridge = await import('../api/account-bridge.js');
+    for (const request of [
+      post('/api/phone-login', { phone: '1', password: 'x' }),
+      new Request(origin + '/api/whoami'),
+      new Request(origin + '/api/backup'),
     ]) {
+      const handler = request.method === 'POST' ? bridge.POST : bridge.GET;
       const response = await handler(request);
       assert.equal(response.status, 503);
       assert.equal((await response.json()).error, '未配置');

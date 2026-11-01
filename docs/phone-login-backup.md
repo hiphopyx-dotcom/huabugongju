@@ -2,6 +2,8 @@
 
 从分镜站 / zinc-raven 根站接到工作台现有账户（`studio_accounts` + `studio_sessions`）。不新建平行用户表。没有 DROP、ALTER、UPDATE、DELETE。
 
+三个地址由 `deploy/api/account-bridge.js` 一个函数处理，`deploy/vercel.json` 把路径转进去，避免再占三个 serverless 函数名额。
+
 ## 接口
 
 | 接口 | 行为 | 把握 |
