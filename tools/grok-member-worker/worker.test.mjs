@@ -27,6 +27,34 @@ test('a busy profile fails the job without opening the page', async () => {
   });
   assert.deepEqual(result, {error: 'REJECTED', reason: 'BUSY'}); assert.equal(imagined, false);
 });
+test('连接异常写出状态码和错误类型，非 401 按退避等待，401 停止', async () => {
+  const fs = await import('node:fs/promises');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const {startMemberWorker} = await import('./worker.mjs');
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'jbp-member-'));
+  const connection = path.join(root, 'connection.json');
+  const configFile = path.join(root, 'config.json');
+  const profile = path.join(root, 'profile');
+  await fs.mkdir(profile);
+  await fs.writeFile(connection, JSON.stringify({format:'jbp-mac-image-worker-v1', origin:'https://jubaopeng-canvas.vercel.app', workerId:'primary', workerToken:'t'.repeat(43)}));
+  await fs.writeFile(configFile, JSON.stringify({connection, profileDir:profile}));
+  const waits = [], logs = [];
+  let n = 0;
+  const transport = async () => {
+    n++;
+    if (n === 1) return {connected:true};
+    if (n === 2) throw Object.assign(Error('down'), {kind:'temporary', type:'5xx', status:503});
+    if (n === 3) return {job:null};
+    throw Object.assign(Error('revoked'), {kind:'revoked', type:'4xx', status:401});
+  };
+  try {
+    await startMemberWorker({configFile, log:line => logs.push(line), sleep:async ms => {waits.push(ms);}, random:() => 0, transport, pollMs:10000});
+    assert.match(logs.find(line => line.includes('连接异常：5xx，HTTP 503')) || '', /5xx，HTTP 503/);
+    assert.match(logs.find(line => line.includes('HTTP 401')) || '', /4xx，HTTP 401/);
+    assert.deepEqual(waits, [1000, 10000]);
+  } finally {await fs.rm(root, {recursive:true, force:true});}
+});
 test('a finished page image is compressed and sent as a data URL', async () => {
   const jpeg = Buffer.from([255, 216, 1, 2, 3, 255, 217]);
   const {result, stats} = await processJob({id: 'x', references: [], prompt: 'p', ratio: '1:1'}, {

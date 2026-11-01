@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {EventEmitter} from 'node:events';
 import {Readable} from 'node:stream';
-import {validateConfig,validateJob,validateDataUrl,checkConnection,generateImage,createReceiptStore,createJobProcessor,websiteRequest,nativeWebsiteFetch,startWorker} from './worker.mjs';
+import {validateConfig,validateJob,validateDataUrl,checkConnection,generateImage,createReceiptStore,createJobProcessor,websiteRequest,nativeWebsiteFetch,startWorker,workerTimeoutMs,retryDelayMs} from './worker.mjs';
 
 const SECRET='secret-only-at-model', TOKEN='t'.repeat(43), LEASE='l'.repeat(43);
 const config={format:'jbp-mac-image-worker-v1',origin:'https://unfair-pony-d7gvmlx4ne8e8796a-1515553937.ap-shanghai.app.tcloudbase.com',workerId:'primary',workerToken:TOKEN};
@@ -97,3 +97,17 @@ test('a running worker lock prevents a second process from contacting any servic
 });
 
 test('paid xAI worker refuses to start unless explicitly allowed',async()=>{await assert.rejects(()=>startWorker('/nonexistent/connection.json',{allowPaidApi:false}),/付费 xAI 图片接口已停用/);});
+test('image website calls default to 20s and keep status, type, and backoff cap',async()=>{
+ assert.equal(workerTimeoutMs({}),20000);
+ assert.equal(workerTimeoutMs({JBP_WORKER_TIMEOUT_MS:'45000'}),45000);
+ assert.equal(workerTimeoutMs({JBP_WORKER_TIMEOUT_MS:'10'}),20000);
+ assert.equal(workerTimeoutMs({JBP_WORKER_TIMEOUT_MS:'nope'}),20000);
+ assert.equal(workerTimeoutMs({JBP_WORKER_TIMEOUT_MS:'200000'}),120000);
+ assert.deepEqual([0,1,2,3,4,5].map(n=>retryDelayMs(n,()=>0)),[1000,2000,4000,8000,16000,30000]);
+ const slow=await websiteRequest(config,'poll',{},{timeoutMs:20000,fetcher:async(_url,options)=>{assert.equal(options.redirect,'error');assert.ok(options.signal);return json({},503);}}).catch(error=>error);
+ assert.equal(slow.kind,'temporary');assert.equal(slow.status,503);assert.equal(slow.type,'5xx');assert.match(slow.message,/HTTP 503/);
+ const denied=await websiteRequest(config,'heartbeat',{},{fetcher:async()=>json({},401)}).catch(error=>error);
+ assert.equal(denied.kind,'revoked');assert.equal(denied.status,401);assert.equal(denied.type,'4xx');
+ const dns=await websiteRequest(config,'poll',{},{fetcher:async()=>{throw Object.assign(Error('getaddrinfo ENOTFOUND'),{code:'ENOTFOUND'});}}).catch(error=>error);
+ assert.equal(dns.kind,'temporary');assert.equal(dns.type,'DNS');assert.equal(dns.status,null);
+});

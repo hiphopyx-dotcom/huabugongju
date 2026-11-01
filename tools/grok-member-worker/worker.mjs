@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {createRequire} from 'node:module';
 import {fileURLToPath} from 'node:url';
-import {validateConfig, validateJob, validateDataUrl, websiteRequest, pause} from '../mac-image-worker/worker.mjs';
+import {validateConfig, validateJob, validateDataUrl, websiteRequest, pause, retryDelayMs} from '../mac-image-worker/worker.mjs';
 import {MemberStop, openProfile, imagineOnce, saveAndCompress} from './executor.mjs';
 
 export const HOME_DIR = path.join(os.homedir(), 'Library', 'Application Support', 'JubaopengGrokMember');
@@ -36,14 +36,14 @@ export async function processJob(job, {chromium, profileDir, archiveDir = ARCHIV
   } finally {await context?.close().catch(() => {});}
 }
 
-export async function startMemberWorker({configFile = path.join(HOME_DIR, 'config.json'), chromium, log = console.log, pollMs = 10000} = {}) {
+export async function startMemberWorker({configFile = path.join(HOME_DIR, 'config.json'), chromium, log = console.log, pollMs = 10000, sleep = pause, random = Math.random, transport = websiteRequest} = {}) {
   const settings = JSON.parse(await fs.readFile(configFile, 'utf8'));
   const connection = validateConfig(JSON.parse(await fs.readFile(settings.connection, 'utf8')));
   const profileDir = settings.profileDir;
   await fs.access(profileDir);
   const intents = path.join(HOME_DIR, 'intents'); await fs.mkdir(intents, {recursive: true, mode: 0o700});
   const statsFile = path.join(HOME_DIR, 'runs.jsonl');
-  const request = (action, body = {}) => websiteRequest(connection, action, body);
+  const request = (action, body = {}) => transport(connection, action, body);
   // A job interrupted mid-page is never run again; it is reported as uncertain.
   for (const file of await fs.readdir(intents)) {
     const intent = JSON.parse(await fs.readFile(path.join(intents, file), 'utf8'));
@@ -55,10 +55,12 @@ export async function startMemberWorker({configFile = path.join(HOME_DIR, 'confi
   const beat = setInterval(() => request('heartbeat').catch(() => {}), 15000);
   await request('heartbeat');
   log(`[${stamp()}] 会员出图端已连接，等待任务`);
+  let streak = 0;
   try {
     while (!stopped) {
       try {
         const {job: raw} = await request('poll');
+        streak = 0;
         if (raw) {
           const job = validateJob(raw), intent = path.join(intents, job.id + '.json');
           await fs.writeFile(intent, JSON.stringify({id: job.id, lease: job.lease}), {mode: 0o600});
@@ -72,10 +74,13 @@ export async function startMemberWorker({configFile = path.join(HOME_DIR, 'confi
           continue;
         }
       } catch (error) {
-        log(`[${stamp()}] 连接异常：${error?.kind || 'temporary'}（${String(error?.status || '')} ${String(error?.message || error).slice(0, 200)}）`);
+        log(`[${stamp()}] 连接异常：${error?.type || '网络'}，HTTP ${Number.isInteger(error?.status) ? error.status : '—'}（${error?.kind || 'temporary'}）`);
         if (error?.kind === 'revoked') break;
+        await sleep(retryDelayMs(streak, random));
+        streak++;
+        continue;
       }
-      await pause(pollMs);
+      await sleep(pollMs);
     }
   } finally {clearInterval(beat);}
 }

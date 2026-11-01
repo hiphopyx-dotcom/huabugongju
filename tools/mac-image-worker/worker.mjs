@@ -115,7 +115,11 @@ export async function createReceiptStore(directory, {io = fs} = {}) {
     for (const file of files) {const item = await read(file.slice(0,-5)); if (item && ['intent','result'].includes(item.state)) result.push(item);} return result;}
   return {read,write,pending};
 }
-function requestError(kind) {return Object.assign(Error(kind === 'revoked' ? '工作端连接已撤销' : kind === 'expired' ? '任务凭据已过期，回执已保留' : '网站连接暂不可用'),{kind});}
+const DEFAULT_TIMEOUT_MS=20000,MIN_TIMEOUT_MS=1000,MAX_TIMEOUT_MS=120000,MAX_BACKOFF_MS=30000;
+export function workerTimeoutMs(env=process.env){const raw=env?.JBP_WORKER_TIMEOUT_MS;if(raw==null||String(raw).trim()==='')return DEFAULT_TIMEOUT_MS;if(!/^[0-9]+$/.test(String(raw).trim()))return DEFAULT_TIMEOUT_MS;const n=Number(String(raw).trim());if(!Number.isSafeInteger(n)||n<MIN_TIMEOUT_MS)return DEFAULT_TIMEOUT_MS;return Math.min(n,MAX_TIMEOUT_MS)}
+export function retryDelayMs(attempt,random=Math.random){const step=Number.isSafeInteger(attempt)&&attempt>0?attempt:0;const base=Math.min(MAX_BACKOFF_MS,1000*2**Math.min(step,20));const room=MAX_BACKOFF_MS-base;const sample=typeof random==='function'?Number(random()):0;const jitter=room>0?Math.floor(Math.min(1,Math.max(0,Number.isFinite(sample)?sample:0))*Math.min(1000,room)):0;return base+jitter}
+export function describeTransportFailure(error){const names=[];for(let current=error,i=0;current&&i<5;current=current.cause,i++)names.push(current.name,current.code,current.message);const blob=names.filter(Boolean).join(' ');if(/ENOTFOUND|EAI_AGAIN|EAI_NODATA/.test(blob))return {type:'DNS',status:null};if(/TimeoutError|UND_ERR_CONNECT_TIMEOUT|UND_ERR_HEADERS_TIMEOUT|UND_ERR_BODY_TIMEOUT|ETIMEDOUT|timed out|operation was aborted due to timeout/i.test(blob))return {type:'超时',status:null};if(/redirect/i.test(blob))return {type:'重定向',status:null};return {type:'网络',status:null}}
+function requestError(kind, extra={}){const type=extra.type||(kind==='revoked'||kind==='expired'?'4xx':'网络');const status=Number.isInteger(extra.status)?extra.status:null;const message=kind==='revoked'?'工作端连接已撤销':kind==='expired'?'任务凭据已过期，回执已保留':`网站连接暂不可用（${type}，HTTP ${status??'—'}）`;return Object.assign(Error(message),{kind,status,type});}
 // Native HTTPS avoids Node fetch adding browser Sec-Fetch headers. Redirects are never followed.
 export function nativeWebsiteFetch(url, options, {request = https.request} = {}) {
   return new Promise((resolve,reject)=>{
@@ -127,16 +131,16 @@ export function nativeWebsiteFetch(url, options, {request = https.request} = {})
     });outgoing.once('error',reject);outgoing.end(options.body);} catch (error) {outgoing?.destroy();reject(error);}
   });
 }
-export async function websiteRequest(configuration, action, body = {}, {fetcher = nativeWebsiteFetch, signal} = {}) {
+export async function websiteRequest(configuration, action, body = {}, {fetcher = nativeWebsiteFetch, signal, timeoutMs = workerTimeoutMs()} = {}) {
   validateConfig(configuration);
   if (!['heartbeat','poll','complete'].includes(action)) invalid();
   let response;
-  try {response = await fetcher(configuration.origin + '/api/image-worker?action=' + action, {method:'POST',redirect:'error',headers:{'Content-Type':'application/json',Authorization:'Bearer ' + configuration.workerToken},body:JSON.stringify(body),signal:combined(signal,25000)});}
-  catch {throw requestError('temporary');}
-  if (response.status === 401 || response.status === 403) {await discard(response); throw requestError('revoked');}
-  if (response.status === 409) {await discard(response); throw requestError('expired');}
-  if (!response.ok) {await discard(response); throw requestError('temporary');}
-  try {return await boundedJson(response,action === 'poll' ? POLL_BYTES : 65536);} catch {throw requestError('temporary');}
+  try {response = await fetcher(configuration.origin + '/api/image-worker?action=' + action, {method:'POST',redirect:'error',headers:{'Content-Type':'application/json',Authorization:'Bearer ' + configuration.workerToken},body:JSON.stringify(body),signal:combined(signal,timeoutMs)});}
+  catch (error) {if (signal?.aborted) throw error; throw requestError('temporary', describeTransportFailure(error));}
+  if (response.status === 401 || response.status === 403) {const status=response.status; await discard(response); throw requestError('revoked', {type:'4xx', status});}
+  if (response.status === 409) {await discard(response); throw requestError('expired', {type:'4xx', status:409});}
+  if (!response.ok) {const status=response.status; await discard(response); throw requestError('temporary', {type:status>=500?'5xx':'4xx', status});}
+  try {return await boundedJson(response,action === 'poll' ? POLL_BYTES : 65536);} catch {throw requestError('temporary', {type:'校验失败', status:response.status});}
 }
 export function pause(ms, signal) {return new Promise(resolve => {if (signal?.aborted) return resolve(); const end = () => {clearTimeout(timer);signal?.removeEventListener('abort',end);resolve();}, timer=setTimeout(end,ms);signal?.addEventListener('abort',end,{once:true});});}
 export function createJobProcessor({store,configuration,apiKey,fetcher=nativeWebsiteFetch,providerFetcher=fetch,signal,logger=console.log,wait=pause,now=Date.now}) {
@@ -150,7 +154,7 @@ export function createJobProcessor({store,configuration,apiKey,fetcher=nativeWeb
         await store.write({version:1,state:'acknowledged',id:receipt.id,status:response.status,created:receipt.created,updated:now()});
         log(receipt.result.dataUrl ? '图片已回传网站。' : '任务状态已回传，未重复生成。'); return response;
       } catch (error) {if (error?.kind === 'expired') await store.write({...receipt,state:'review',updated:now()});
-        if (error?.kind === 'revoked' || error?.kind === 'expired' || attempt===2 || signal?.aborted) throw error; await wait(2000,signal);}
+        if (error?.kind === 'revoked' || error?.kind === 'expired' || attempt===2 || signal?.aborted) throw error; await wait(retryDelayMs(attempt),signal);}
     }
   }
   return {
@@ -189,10 +193,12 @@ export async function startWorker(configFile,{signal,apiKey=process.env.XAI_API_
     if (!connected.ok) throw Error(connected.status ? '模型认证检查未通过（HTTP '+connected.status+'），未开始领取任务。' : '本机暂时无法连接模型，未开始领取任务。');
     log('模型连接验证通过。');
     await request('heartbeat'); heartbeatTimer=setInterval(heartbeat,15000); log('图片工作端已连接，正在等待任务。');
+    let failStreak=0;
     while (!controller.signal.aborted) {
-      try {const data=await request('poll'); if (data.job) {validateJob(data.job); log('收到图片任务，正在处理。'); await processor.process(data.job);}}
+      try {const data=await request('poll'); failStreak=0; if (data.job) {validateJob(data.job); log('收到图片任务，正在处理。'); await processor.process(data.job);}}
       catch (error) {if (error?.kind==='revoked') {log('工作端连接已撤销，已停止。');stop();}
         else if (error?.kind==='expired') {log('任务执行凭据已过期，回执已保留，已停止。');stop();}
+        else if (error?.kind==='temporary' && !controller.signal.aborted) {log(`连接异常：${error.type||'网络'}，HTTP ${Number.isInteger(error.status)?error.status:'—'}。将继续重试；未标记为生成成功。`); await pause(retryDelayMs(failStreak),controller.signal); failStreak++; continue;}
         else if (!controller.signal.aborted) {log('连接或回执需要核对，已停止领取新任务。');stop();}}
       await pause(pollMs,controller.signal);
     }
