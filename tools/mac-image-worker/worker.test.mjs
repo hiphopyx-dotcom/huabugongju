@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {EventEmitter} from 'node:events';
 import {Readable} from 'node:stream';
-import {validateConfig,validateJob,validateDataUrl,checkConnection,generateImage,createReceiptStore,createJobProcessor,websiteRequest,nativeWebsiteFetch,startWorker,workerTimeoutMs,retryDelayMs} from './worker.mjs';
+import {validateConfig,validateExtraOrigins,validateJob,validateReference,validateDataUrl,loadReference,checkConnection,generateImage,createReceiptStore,createJobProcessor,websiteRequest,nativeWebsiteFetch,startWorker,workerTimeoutMs,retryDelayMs} from './worker.mjs';
 
 const SECRET='secret-only-at-model', TOKEN='t'.repeat(43), LEASE='l'.repeat(43);
 const config={format:'jbp-mac-image-worker-v1',origin:'https://unfair-pony-d7gvmlx4ne8e8796a-1515553937.ap-shanghai.app.tcloudbase.com',workerId:'primary',workerToken:TOKEN};
@@ -96,6 +96,59 @@ test('a running worker lock prevents a second process from contacting any servic
   const d=await directory(t),file=path.join(d,'connection.json');await fs.writeFile(file,JSON.stringify(config));await fs.writeFile(path.join(d,'worker.lock'),'123');let count=0;await assert.rejects(()=>startWorker(file,{allowPaidApi:true,apiKey:SECRET,fetcher:async()=>count++,providerFetcher:async()=>count++}),/已运行/);assert.equal(count,0);
 });
 
+test('extraOrigins accept only exact https origins and leave the built-in list unchanged',()=>{
+ const sunny='https://sunny-terra.example.grok.me';
+ assert.deepEqual(validateExtraOrigins(undefined),[]);
+ assert.equal(validateConfig(config),config);
+ assert.equal(validateConfig({...config,origin:sunny},{extraOrigins:[sunny]}).origin,sunny);
+ assert.equal(validateConfig(config,{extraOrigins:[sunny]}).origin,config.origin);
+ assert.throws(()=>validateConfig({...config,origin:sunny}));
+ assert.throws(()=>validateConfig({...config,extraOrigins:[sunny]}));
+ for(const extraOrigins of [['https://*.grok.me'],['http://sunny-terra.example.grok.me'],[sunny+'/'],[sunny+'/queue'],['https://user:pw@sunny-terra.example.grok.me'],['*'],sunny,[sunny,sunny]]) assert.throws(()=>validateConfig({...config,origin:sunny},{extraOrigins}),JSON.stringify(extraOrigins));
+ assert.throws(()=>validateConfig({...config,origin:'https://other.example'},{extraOrigins:[sunny]}));
+});
+test('v1 jobs stay strict; edit, reference urls and video parse or fail closed',()=>{
+ const ref={url:'https://studio.example/api/image-worker?action=reference&id='+id+'&part=0'};
+ assert.equal(validateReference(ref),ref);
+ validateJob({...job,type:'edit',source:image,references:[]});
+ validateJob({...job,type:'edit',references:[image]});
+ const video={id,lease:LEASE,type:'video',prompt:'海边走路',ratio:'16:9',resolution:'720p',duration:6,audio:false,references:[ref]};
+ assert.equal(validateJob(video),video);
+ for(const bad of [
+  {...job,type:'video'},
+  {...video,audio:1},{...video,duration:6.5},{...video,duration:0},{...video,resolution:'1k'},
+  {...job,references:[{url:'http://studio.example/a.png'}]},
+  {...job,references:[{url:'https://*.grok.me/a.png'}]},
+  {...job,references:[{url:'https://evil.example/a.png',cookie:'secret'}]},
+  {...job,type:'edit',source:image,references:[image,image,image]},
+  {...job,type:'nope'},
+ ]) assert.throws(()=>validateJob(bad));
+});
+test('video is refused before any provider call and url references are not sent to the paid API',async()=>{
+ let calls=0;
+ const video={id,lease:LEASE,type:'video',prompt:'海边走路',ratio:'16:9',resolution:'1080p',duration:5,audio:true,references:[]};
+ assert.deepEqual(await generateImage(video,SECRET,{fetcher:async()=>{calls++;return json({});}}),{error:'REJECTED',reason:'UNSUPPORTED'});
+ assert.equal(calls,0);
+ assert.deepEqual(await generateImage({...job,references:[{url:'https://studio.example/a.png'}]},SECRET,{fetcher:async()=>{calls++;throw Error('must not call');}}),{error:'UNCERTAIN'});
+ assert.equal(calls,0);
+});
+test('reference download uses the task lease, stays on the configured origin, and never sends a cookie',async()=>{
+ const ref={url:config.origin+'/api/image-worker?action=reference&id='+id+'&part=source'};
+ let calls=0;
+ const loaded=await loadReference(config,{lease:LEASE},ref,{fetcher:async(url,options)=>{
+  calls++;assert.equal(url,ref.url);assert.equal(options.method,'GET');assert.equal(options.redirect,'error');
+  assert.equal(options.headers.Authorization,'Bearer '+TOKEN);assert.equal(options.headers['X-Jbp-Lease'],LEASE);
+  assert.equal(JSON.stringify(options.headers).toLowerCase().includes('cookie'),false);
+  return new Response(Buffer.from(png,'base64'));
+ }});
+ assert.equal(loaded.mime,'image/png');assert.equal(calls,1);
+ await assert.rejects(()=>loadReference(config,{lease:LEASE},{url:'https://evil.example/a.png'},{fetcher:async()=>{calls++;throw Error('must not fetch');}}),/无效/);
+ assert.equal(calls,1);
+ let redirects=0;
+ const redirect=()=>{redirects++;return {status:302,ok:false,headers:new Headers({location:'https://evil.example/a.png'}),body:{cancel:async()=>{}}}};
+ await assert.rejects(()=>loadReference(config,{lease:LEASE},ref,{fetcher:redirect}),error=>error.kind==='reference'&&error.definite===true);
+ assert.equal(redirects,1);
+});
 test('paid xAI worker refuses to start unless explicitly allowed',async()=>{await assert.rejects(()=>startWorker('/nonexistent/connection.json',{allowPaidApi:false}),/付费 xAI 图片接口已停用/);});
 test('image website calls default to 20s and keep status, type, and backoff cap',async()=>{
  assert.equal(workerTimeoutMs({}),20000);

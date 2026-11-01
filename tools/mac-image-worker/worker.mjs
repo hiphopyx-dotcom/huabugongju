@@ -14,12 +14,29 @@ const IMAGE_BYTES = 3 * 1024 * 1024;
 const REFERENCE_BYTES = IMAGE_BYTES;
 const POLL_BYTES = 3 * (Math.ceil(REFERENCE_BYTES / 3) * 4 + 64) + 65536;
 const MAX_RESPONSE = Math.ceil(IMAGE_BYTES / 3) * 4 + 100000;
+const VIDEO_RESOLUTIONS = ['480p','720p','1080p'];
 const object = x => x !== null && typeof x === 'object' && !Array.isArray(x);
 const only = (x, keys) => object(x) && Object.keys(x).every(k => keys.includes(k));
 const invalid = () => {throw Error('配置或任务格式无效');};
-export function validateConfig(value) {
+/** Exact https origins only. Wildcards, http, paths and credentials are rejected. */
+export function validateExtraOrigins(value) {
+  if (value == null) return [];
+  if (!Array.isArray(value) || value.length > 8) invalid();
+  const seen = new Set();
+  for (const item of value) {
+    if (typeof item !== 'string' || item.length > 256 || item !== item.trim() || /[\s*]/.test(item)) invalid();
+    let url;
+    try {url = new URL(item);} catch {invalid();}
+    if (url.protocol !== 'https:' || url.username || url.password || url.origin !== item || seen.has(item)) invalid();
+    seen.add(item);
+  }
+  return value;
+}
+export function validateConfig(value, options) {
+  const extra = validateExtraOrigins(options?.extraOrigins);
+  const allowed = extra.length ? [...ORIGINS, ...extra] : ORIGINS;
   if (!only(value,['format','origin','workerId','workerToken']) || value.format !== 'jbp-mac-image-worker-v1'
-    || !ORIGINS.includes(value.origin) || value.workerId !== 'primary' || typeof value.workerToken !== 'string' || !TOKEN.test(value.workerToken)) invalid();
+    || !allowed.includes(value.origin) || value.workerId !== 'primary' || typeof value.workerToken !== 'string' || !TOKEN.test(value.workerToken)) invalid();
   return value;
 }
 export function validateKey(value) {
@@ -38,12 +55,79 @@ export function validateDataUrl(value, maxBytes = IMAGE_BYTES) {
   if (!valid) invalid();
   return value;
 }
-export function validateJob(value) {
-  if (!only(value,['id','lease','prompt','ratio','resolution','references']) || typeof value.id !== 'string' || !UUID.test(value.id) || typeof value.lease !== 'string' || !TOKEN.test(value.lease)
-    || typeof value.prompt !== 'string' || !value.prompt.trim() || value.prompt.length > 8000 || !RATIOS.includes(value.ratio)
-    || !['1k','2k'].includes(value.resolution) || !Array.isArray(value.references) || value.references.length > 3) invalid();
-  value.references.forEach(x => validateDataUrl(x, REFERENCE_BYTES));
+export function validateReference(value) {
+  if (typeof value === 'string') return validateDataUrl(value, REFERENCE_BYTES);
+  if (!only(value,['url']) || typeof value.url !== 'string' || value.url.length > 2048 || /[\s*]/.test(value.url)) invalid();
+  let url;
+  try {url = new URL(value.url);} catch {invalid();}
+  if (url.protocol !== 'https:' || url.username || url.password || url.hash || url.hostname.includes('*') || url.origin + url.pathname + url.search !== value.url) invalid();
   return value;
+}
+function jobType(value) {
+  if (!object(value)) return '';
+  if (value.type == null) return 'image';
+  return value.type === 'image' || value.type === 'edit' || value.type === 'video' ? value.type : '';
+}
+export function validateJob(value) {
+  const type = jobType(value);
+  const keys = type === 'image' ? (value.type == null ? ['id','lease','prompt','ratio','resolution','references'] : ['id','lease','prompt','ratio','resolution','references','type'])
+    : type === 'edit' ? ['id','lease','prompt','ratio','resolution','references','type','source']
+    : type === 'video' ? ['id','lease','type','prompt','ratio','resolution','duration','audio','references'] : null;
+  if (!keys || !only(value, keys) || typeof value.id !== 'string' || !UUID.test(value.id) || typeof value.lease !== 'string' || !TOKEN.test(value.lease)
+    || typeof value.prompt !== 'string' || !value.prompt.trim() || value.prompt.length > 8000 || !RATIOS.includes(value.ratio) || !Array.isArray(value.references)) invalid();
+  if (value.references.length + (type === 'edit' && value.source != null ? 1 : 0) > 3) invalid();
+  value.references.forEach(validateReference);
+  if (type === 'edit') {
+    if (value.source == null && !value.references.length) invalid();
+    if (value.source != null) validateReference(value.source);
+    if (!['1k','2k'].includes(value.resolution)) invalid();
+  } else if (type === 'video') {
+    if (!Number.isSafeInteger(value.duration) || value.duration < 1 || value.duration > 60 || typeof value.audio !== 'boolean' || !VIDEO_RESOLUTIONS.includes(value.resolution)) invalid();
+  } else if (!['1k','2k'].includes(value.resolution)) invalid();
+  return value;
+}
+export function dataUrlBytes(value) {
+  const data = validateDataUrl(value, REFERENCE_BYTES);
+  const mime = data.slice(5, data.indexOf(';'));
+  const bytes = Buffer.from(data.slice(data.indexOf(',') + 1), 'base64');
+  return {bytes, mime, ext: mime === 'image/png' ? 'png' : mime === 'image/webp' ? 'webp' : 'jpg'};
+}
+function sniffImage(bytes) {
+  if (bytes.length >= 45 && bytes.subarray(0,8).toString('hex') === '89504e470d0a1a0a' && bytes.toString('ascii',12,16) === 'IHDR' && bytes.toString('ascii',bytes.length-8,bytes.length-4) === 'IEND') return {mime:'image/png', ext:'png'};
+  if (bytes.length >= 12 && bytes[0] === 255 && bytes[1] === 216 && bytes.at(-2) === 255 && bytes.at(-1) === 217) return {mime:'image/jpeg', ext:'jpg'};
+  if (bytes.length >= 30 && bytes.toString('ascii',0,4) === 'RIFF' && bytes.toString('ascii',8,12) === 'WEBP' && bytes.readUInt32LE(4) + 8 === bytes.length) return {mime:'image/webp', ext:'webp'};
+  return null;
+}
+async function boundedBytes(response, limit) {
+  if (Number(response.headers?.get('content-length')) > limit) throw Error('响应过大');
+  if (!response.body) throw Error('没有响应');
+  const chunks = [], reader = response.body.getReader(); let size = 0;
+  try {
+    for (;;) {const {done,value} = await reader.read(); if (done) break; size += value.byteLength;
+      if (size > limit) {await reader.cancel(); throw Error('响应过大');} chunks.push(Buffer.from(value));}
+  } finally {reader.releaseLock();}
+  return Buffer.concat(chunks);
+}
+/** Downloads one reference with the worker credential and the task lease. Never sends a cookie or follows a redirect. */
+export async function loadReference(configuration, job, ref, {fetcher = nativeWebsiteFetch, signal, extraOrigins} = {}) {
+  validateConfig(configuration, {extraOrigins});
+  if (typeof job?.lease !== 'string' || !TOKEN.test(job.lease)) invalid();
+  validateReference(ref);
+  if (typeof ref === 'string') return dataUrlBytes(ref);
+  const url = new URL(ref.url);
+  if (url.origin !== configuration.origin) invalid();
+  let response;
+  const headers = {Authorization:'Bearer ' + configuration.workerToken, 'X-Jbp-Lease': job.lease, Accept:'image/png,image/jpeg,image/webp'};
+  try {response = await fetcher(ref.url, {method:'GET', redirect:'error', headers, signal:combined(signal, workerTimeoutMs())});}
+  catch (error) {if (signal?.aborted) throw error; throw requestError('temporary', describeTransportFailure(error));}
+  if (response.status === 401 || response.status === 403) {const status = response.status; await discard(response); throw requestError('revoked', {type:'4xx', status});}
+  if (response.status === 409) {await discard(response); throw requestError('expired', {type:'4xx', status:409});}
+  if (!response.ok) {const status = response.status; await discard(response); throw Object.assign(Error('参考图下载失败'), {kind:'reference', definite: status < 500, status});}
+  let bytes;
+  try {bytes = await boundedBytes(response, REFERENCE_BYTES);} catch {throw Object.assign(Error('参考图下载失败'), {kind:'reference', definite:false});}
+  const image = sniffImage(bytes);
+  if (!image || bytes.length > REFERENCE_BYTES) throw Object.assign(Error('参考图内容无效'), {kind:'reference', definite:true});
+  return {...image, bytes};
 }
 async function boundedJson(response, limit) {
   if (Number(response.headers?.get('content-length')) > limit) throw Error('响应过大');
@@ -69,10 +153,14 @@ export async function checkConnection(apiKey, {fetcher = fetch, signal} = {}) {
 export async function generateImage(job, apiKey, {fetcher = fetch, signal} = {}) {
   try {
     validateJob(job); const key = validateKey(apiKey);
+    if (job.type === 'video') return {error:'REJECTED', reason:'UNSUPPORTED'};
+    const refs = [];
+    if (job.source) {if (typeof job.source !== 'string') return {error:'UNCERTAIN'}; refs.push(job.source);}
+    for (const ref of job.references) {if (typeof ref !== 'string') return {error:'UNCERTAIN'}; refs.push(ref);}
     const body = {model:'grok-imagine-image-2.0', prompt:job.prompt, n:1, quality:'low', resolution:job.resolution, aspect_ratio:job.ratio, response_format:'b64_json'};
-    if (job.references.length === 1) body.image = {type:'image_url',url:job.references[0]};
-    else if (job.references.length) body.images = job.references.map(url => ({type:'image_url',url}));
-    const response = await fetcher(API + (job.references.length ? '/images/edits' : '/images/generations'), {
+    if (refs.length === 1) body.image = {type:'image_url',url:refs[0]};
+    else if (refs.length) body.images = refs.map(url => ({type:'image_url',url}));
+    const response = await fetcher(API + (refs.length ? '/images/edits' : '/images/generations'), {
       method:'POST', redirect:'error', headers:{'Content-Type':'application/json',Authorization:'Bearer ' + key}, body:JSON.stringify(body), signal:combined(signal,110000),
     });
     if (!response.ok) {await discard(response); return {error:response.status >= 400 && response.status < 500 && response.status !== 408 ? 'REJECTED' : 'UNCERTAIN'};}
@@ -131,8 +219,8 @@ export function nativeWebsiteFetch(url, options, {request = https.request} = {})
     });outgoing.once('error',reject);outgoing.end(options.body);} catch (error) {outgoing?.destroy();reject(error);}
   });
 }
-export async function websiteRequest(configuration, action, body = {}, {fetcher = nativeWebsiteFetch, signal, timeoutMs = workerTimeoutMs()} = {}) {
-  validateConfig(configuration);
+export async function websiteRequest(configuration, action, body = {}, {fetcher = nativeWebsiteFetch, signal, timeoutMs = workerTimeoutMs(), extraOrigins} = {}) {
+  validateConfig(configuration, {extraOrigins});
   if (!['heartbeat','poll','complete'].includes(action)) invalid();
   let response;
   try {response = await fetcher(configuration.origin + '/api/image-worker?action=' + action, {method:'POST',redirect:'error',headers:{'Content-Type':'application/json',Authorization:'Bearer ' + configuration.workerToken},body:JSON.stringify(body),signal:combined(signal,timeoutMs)});}

@@ -27,7 +27,7 @@ sh tools/mac-image-worker/build-app.sh
 
 ## 连接和回执
 
-连接文件固定格式为 `jbp-mac-image-worker-v1`，工作端标识 `primary`；仅接受明确列入代码的腾讯云站点和原 Vercel 站点。网站凭据仅发送到网站接口；模型密钥只通过子进程环境发送到固定模型 API，不写磁盘、命令行参数或日志。密钥保存在本机钥匙串。
+连接文件固定格式为 `jbp-mac-image-worker-v1`，工作端标识 `primary`；默认只接受明确列入代码的腾讯云站点和原 Vercel 站点。要再加一个站点，在本机配置里写 `extraOrigins`，每一项必须是完整的 `https://主机`，不能用通配符、http 或带路径的地址。不写这项时，接受的站点和以前一样。网站凭据仅发送到网站接口；模型密钥只通过子进程环境发送到固定模型 API，不写磁盘、命令行参数或日志。密钥保存在本机钥匙串。付费 xAI 接口保持关闭，不要设置 `JBP_IMAGE_EXECUTION=direct`。
 
 本机数据位于 `~/Library/Application Support/JubaopengImageWorker/`。目录权限为 0700，连接文件和回执为 0600。回执只记录任务编号、租约、执行状态和待回传结果，可能临时保存生成图片，不记录模型密钥或账号资料。网站确认接收后，本机回执删除图片和租约，只保留确认状态。
 

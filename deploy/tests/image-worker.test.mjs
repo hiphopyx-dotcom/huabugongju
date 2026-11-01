@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import {PGlite} from '@electric-sql/pglite';
-import {createImageWorkerService,createImageWorkerHandler} from '../lib/image-worker.mjs';
+import {createImageWorkerService,createImageWorkerHandler,STRUCTURE_STEPS,structureMessage} from '../lib/image-worker.mjs';
+import {STRUCTURE_STEPS as pageSteps} from '../../tools/grok-member-worker/executor.mjs';
 import {createImageHandler} from '../lib/images.mjs';
 import {hash} from '../lib/security.mjs';
 
@@ -240,6 +241,88 @@ test('出图端失败原因原样显示给成员，不再统一换成联系管�
  const pub=await import('../../public/studio/model-privacy.mjs'),pages=await import('../../pages/model-privacy.mjs');
  for(const text of Object.values(FAILURE_REASONS)){assert.equal(pub.memberError(text),text);assert.equal(pages.memberError(text),text);}
  assert.equal(FAILURE_REASONS.SUBMIT,'Grok 页面提交失败，请重试');
+ assert.equal(FAILURE_REASONS.UNSUPPORTED,'暂不支持视频任务，未开始生成');
  assert.equal(pub.memberError('Grok rate limit key=abc'),'模型服务暂不可用，请联系管理员');
+ assert.equal(pub.memberError(structureMessage('上传参考图')),'网页结构变化：上传参考图');
+ assert.deepEqual(STRUCTURE_STEPS,pageSteps);
  assert.deepEqual(pub.WORKER_MESSAGES,pages.WORKER_MESSAGES);
+});
+
+test('edit and video jobs keep v1 image polls unchanged and serve references without cookies',async t=>{
+ const s=await setup(t);
+ const plain=await s.submit();
+ const imageJob=(await (await s.worker('poll')).json()).job;
+ assert.deepEqual(Object.keys(imageJob).sort(),['id','lease','prompt','ratio','references','resolution']);
+ assert.equal(imageJob.type,undefined);
+ await s.worker('complete',{id:imageJob.id,lease:imageJob.lease,dataUrl:IMAGE});
+ const parent=await s.importImage('a');
+ const edited=await s.submit('a',{metadata:{entityId:'hero',slot:'front',parentImageId:parent.id}},{references:[IMAGE],referenceIds:[parent.id]});
+ const edit=(await (await s.worker('poll')).json()).job;
+ assert.equal(edit.id,edited.job.id);
+ assert.equal(edit.type,'edit');
+ assert.deepEqual(edit.references,[]);
+ assert.match(edit.source.url,/^https:\/\/studio\.test\/api\/image-worker\?action=reference&id=/);
+ assert.match(edit.source.url,/part=source$/);
+ const download=await s.handler(new Request(edit.source.url,{headers:{Authorization:'Bearer '+s.credential(),'X-Jbp-Lease':edit.lease}}));
+ assert.equal(download.status,200);
+ assert.equal(download.headers.get('content-type'),'image/png');
+ assert.equal(download.headers.get('set-cookie'),null);
+ assert.ok((Buffer.from(await download.arrayBuffer())).length>8);
+ assert.equal((await s.handler(new Request(edit.source.url,{headers:{Authorization:'Bearer '+s.credential(),'X-Jbp-Lease':'x'.repeat(43)}}))).status,409);
+ assert.equal((await s.handler(new Request(edit.source.url,{headers:{Authorization:'Bearer '+s.credential(),'X-Jbp-Lease':edit.lease,Origin:ORIGIN}}))).status,403);
+ await s.worker('complete',{id:edit.id,lease:edit.lease,error:'REJECTED',reason:'PAGE'});
+ const videoTask=await s.submit('b');
+ await s.query('UPDATE studio_image_dispatch SET payload = payload || $2::jsonb WHERE job_id=$1',[videoTask.job.id,JSON.stringify({task:{type:'video',duration:6,audio:false,resolution:'720p',ratio:'16:9'}})]);
+ const video=(await (await s.worker('poll')).json()).job;
+ assert.equal(video.type,'video');
+ assert.equal(video.duration,6);
+ assert.equal(video.audio,false);
+ assert.equal(video.resolution,'720p');
+ assert.equal(video.ratio,'16:9');
+ assert.deepEqual(await (await s.worker('complete',{id:video.id,lease:video.lease,error:'REJECTED',reason:'UNSUPPORTED'})).json(),{saved:true,status:'failed'});
+ assert.match((await s.query('SELECT error FROM studio_image_jobs WHERE id=$1',[video.id]))[0].error,/暂不支持视频/);
+ assert.equal((await (await s.worker('poll')).json()).job,null);
+ void plain;
+});
+
+test('account label is stored on the image and omitted labels leave metadata unchanged',async t=>{
+ const s=await setup(t),task=await s.submit();
+ const job=(await (await s.worker('poll')).json()).job;
+ assert.equal((await s.worker('complete',{id:job.id,lease:job.lease,dataUrl:IMAGE,accountLabel:'a@b.com'})).status,400);
+ assert.equal((await s.worker('complete',{id:job.id,lease:job.lease,dataUrl:IMAGE,accountLabel:'甲',workerId:'other'})).status,400);
+ assert.equal((await s.query('SELECT state FROM studio_image_dispatch WHERE job_id=$1',[job.id]))[0].state,'leased');
+ assert.deepEqual(await (await s.worker('complete',{id:job.id,lease:job.lease,dataUrl:IMAGE,accountLabel:'甲',workerId:'primary'})).json(),{saved:true,status:'done'});
+ const [image]=await s.query('SELECT metadata FROM studio_images WHERE id=$1',[job.id]);
+ assert.equal(image.metadata.accountLabel,'甲');
+ assert.equal(image.metadata.workerId,'primary');
+ assert.equal(image.metadata.entityId,'hero');
+ assert.equal(image.metadata.slot,'front');
+ const images=createImageHandler(s.query,{now:s.now});
+ const listed=await (await images(new Request(ORIGIN+'/api/images?action=list',{headers:{Cookie:'__Host-jbp-session=session-a'}}))).json();
+ assert.equal(listed.items[0].metadata.accountLabel,'甲');
+ assert.equal(listed.items[0].metadata.workerId,'primary');
+ const again=await s.submit('b');
+ const next=(await (await s.worker('poll')).json()).job;
+ assert.equal(next.id,again.job.id);
+ await s.worker('complete',{id:next.id,lease:next.lease,dataUrl:IMAGE});
+ const [plain]=await s.query('SELECT metadata FROM studio_images WHERE id=$1',[next.id]);
+ assert.equal(plain.metadata.accountLabel,undefined);
+ assert.equal(plain.metadata.workerId,undefined);
+ const blocked=createImageHandler(s.query,{now:s.now});
+ assert.equal((await blocked(new Request(ORIGIN+'/api/images?action=generate',{method:'POST',headers:{Origin:ORIGIN,Cookie:'__Host-jbp-session=session-a','Content-Type':'application/json'},body:JSON.stringify({requestId:randomUUID(),projectId:'project-a',projectTitle:'作品',name:'图',kind:'角色',prompt:'一只猫',ratio:'1:1',resolution:'1k',references:[],metadata:{accountLabel:'甲'}})}))).status,400);
+ void task;
+});
+
+test('structure failures show the step and uncertain results are not claimed again',async t=>{
+ const s=await setup(t);
+ await s.submit();
+ const job=(await (await s.worker('poll')).json()).job;
+ assert.equal((await s.worker('complete',{id:job.id,lease:job.lease,error:'REJECTED',reason:'STRUCTURE',step:'不存在的步骤'})).status,400);
+ assert.equal((await s.query('SELECT state FROM studio_image_dispatch WHERE job_id=$1',[job.id]))[0].state,'leased');
+ assert.deepEqual(await (await s.worker('complete',{id:job.id,lease:job.lease,error:'UNCERTAIN',reason:'STRUCTURE',step:'等图'})).json(),{saved:true,status:'uncertain'});
+ assert.equal((await s.query('SELECT error FROM studio_image_jobs WHERE id=$1',[job.id]))[0].error,'网页结构变化：等图');
+ assert.equal((await s.query('SELECT state FROM studio_quota_entries'))[0].state,'reserved');
+ assert.equal((await (await s.worker('poll')).json()).job,null);
+ const {memberError}=await import('../../public/studio/model-privacy.mjs');
+ assert.equal(memberError('网页结构变化：等图'),'网页结构变化：等图');
 });

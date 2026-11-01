@@ -85,6 +85,21 @@ test('personal gallery and download links use the authenticated same-origin cont
   assert.throws(()=>imageContentUrl({id:'../private?token=secret'}),/无效/);
 });
 
+test('gallery and job rows show the producing account without inventing one', async t=>{
+  const f=fixture(t,s=>{
+    s.items=[{...image(), metadata:{accountLabel:'甲', workerId:'primary', entityId:'hero'}}];
+    s.jobs=[{requestId:'00000000-0000-4000-8000-000000009999', status:'failed', error:'网页结构变化：上传参考图', created:1792970000000, metadata:{accountLabel:'甲'}}];
+  });
+  await tick();
+  assert.match(f.host.querySelector('.image-gallery-card').textContent,/出图账号 甲/);
+  assert.match(f.host.querySelector('.image-gallery-card').textContent,/工作端 primary/);
+  const jobs=f.host.querySelector('[data-image-jobs]').textContent;
+  assert.match(jobs,/出图账号 甲/);
+  assert.match(jobs,/网页结构变化：上传参考图/);
+  const plain=fixture(t);
+  await tick();
+  assert.equal(plain.host.textContent.includes('出图账号'), false);
+});
 test('anonymous users cannot read a gallery or submit a paid generation', async t=>{
   const f=fixture(t,s=>{s.user=null;});await tick();assert.deepEqual(f.state.calls,[]);
   assert.equal(f.document.querySelector('[data-image-form]'),null);assert.ok(f.document.querySelector('[data-account="login"]'));
