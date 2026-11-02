@@ -1,5 +1,5 @@
-import {estimateText,estimateMedia,TEXT_OUTPUT_HOLD} from './token-estimate.mjs';
-import {apiFetch} from './api-client.mjs';
+import {apiFetch, apiBase, rememberToken, hydrateAuthedImages} from './api-client.mjs?v=port9';
+import {estimateText,estimateMedia,TEXT_OUTPUT_HOLD} from './token-estimate.mjs?v=bd900549f538';
 const E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const N=v=>v==null?'不限额':Number(v).toLocaleString('zh-CN');
 let viewer=null,cached=null,cacheTime=0,pending=null;
