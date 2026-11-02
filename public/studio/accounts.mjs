@@ -1,11 +1,11 @@
-import {apiFetch, apiBase, rememberToken, hydrateAuthedImages} from './api-client.mjs?v=port9';
+import {openQuota,resetQuota} from './quota.mjs';
+import {apiFetch, apiBase, rememberToken} from './api-client.mjs';
 function benchBase(){try{return apiBase()}catch{return ''}}
 async function benchFetch(path,opts){try{return await apiFetch(path,opts)}catch(e){if(e instanceof ReferenceError)return fetch(path,opts);throw e}}
 function benchRemember(token){try{rememberToken(token)}catch{/* 测试沙箱没有会话存储 */}}
 function benchReset(){try{resetQuota()}catch(e){if(e instanceof ReferenceError)return;throw e}}
 async function benchOpenQuota(who){try{return await openQuota(who)}catch(e){if(e instanceof ReferenceError)return;throw e}}
-import {openQuota,resetQuota} from './quota.mjs?v=bd900549f538';
-import {memberError} from './model-privacy.mjs?v=bd900549f538';
+import {memberError} from './model-privacy.mjs';
 let assetViewer=null,writingLauncher=null;
 export function setWritingLauncher(fn){writingLauncher=fn;}
 export function setAssetViewer(fn){assetViewer=fn;}

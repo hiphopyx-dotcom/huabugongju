@@ -1,6 +1,6 @@
 // Pure creative workflow helpers. No network, account, billing, or generation side effects.
-import {IMAGE_WORKSHOP_CATEGORIES, buildImageWorkshopPrompt} from './image-workshop-core.mjs?v=bd900549f538';
-import * as SB from './storyboard.mjs?v=bd900549f538';
+import {IMAGE_WORKSHOP_CATEGORIES, buildImageWorkshopPrompt} from './image-workshop-core.mjs';
+import * as SB from './storyboard.mjs';
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const freeze = value => { if (value && typeof value === 'object') {Object.values(value).forEach(freeze); Object.freeze(value);} return value; };
@@ -363,19 +363,12 @@ export function planImageBatch({category,entities=[],items=[],mode='missing',epi
 /** Latest canonical identity/structure references only. The caller supplies this
  * project's items (or entity.projectId); never returns image bytes or identities.
  * A scene plan anchors all four directions; the N still adds finished art detail.
- * A character faceLockId, when that image is still in the supplied list, replaces
- * the front identity reference for every character slot including front.
  */
 export function imageSlotReferences(entity, slot, items=[]) {
  if(!object(entity)||!categoryOf(entity.category))throw Error('图片实体无效');
  slot=slotOf(entity.category,slot).id;
  const candidates=[];
- if(entity.category==='characters'){
-  const lockedId=typeof entity.faceLockId==='string'?entity.faceLockId:'';
-  const locked=lockedId?list(items).find(item=>item&&item.id===lockedId&&!isDeleted(item)&&!['failed','running','cancelled'].includes(item.status)):null;
-  if(locked)candidates.push(locked);
-  else if(slot!=='front')candidates.push(latestSlot(entity,'front',items));
- }
+ if(entity.category==='characters'&&slot!=='front')candidates.push(latestSlot(entity,'front',items));
  if(entity.category==='locations'&&slot!=='plan') {
   candidates.push(latestSlot(entity,'plan',items));
   if(slot!=='view_n')candidates.push(latestSlot(entity,'view_n',items));

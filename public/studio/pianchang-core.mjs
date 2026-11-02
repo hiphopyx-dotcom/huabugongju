@@ -1,9 +1,9 @@
-import {axisPrompt} from './pianchang-axis.mjs?v=bd900549f538';
+import {axisPrompt} from './pianchang-axis.mjs';
 // Lossless bridge between the film-set desk and the existing project/image store.
-import {breakScript, preferScriptBody, episodeKey} from './pianchang-parse.mjs?v=bd900549f538';
-import {deriveImageEntities, buildWorkflowPrompt, IMAGE_SLOTS, PORTRAIT_EMOTIONS} from './image-workflow.mjs?v=bd900549f538';
-import {shotsFromBreak} from './script-breakdown.mjs?v=bd900549f538';
-import {groups as languageGroups} from './storyboard.mjs?v=bd900549f538';
+import {breakScript, preferScriptBody, episodeKey} from './pianchang-parse.mjs';
+import {deriveImageEntities, buildWorkflowPrompt, IMAGE_SLOTS} from './image-workflow.mjs';
+import {shotsFromBreak} from './script-breakdown.mjs';
+import {groups as languageGroups} from './storyboard.mjs';
 
 export const escapeHTML = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function imageURL(src) {
@@ -210,17 +210,6 @@ export function prepareStill(p,d,category,id,slot) {
         shot[field] = aid;
       }
     }
-    const sceneId = slot === 'reverse' ? (row.reverse_location || row.frame_location) : row.frame_location;
-    if (sceneId) {
-      const loc = d.locations.find(l => l.id === sceneId);
-      const choice = row.refChoices?.[sceneId] || 'view_n';
-      const ref = loc ? reference(p,d,loc.id,choice) : null;
-      if (ref) {
-        const aid = `ref-${loc.id}`;
-        if (!assets.some(a=>a.id === aid)) assets.push({id:aid,name:loc.name,kind:'image',src:slotImage(p,d,`${loc.id}:${choice}`).src});
-        shot.locations = [aid, ...(shot.locations || []).filter(id => id !== aid)];
-      }
-    }
     // Identity and scene references first. Existing shot output is not its own brief.
     const ordered = [...(shot.angle === '过肩镜头' ? [shot.otsFrom,shot.otsTo] : []),...(shot.characters || []),...(shot.locations || []),...(shot.props || [])];
     for (const aid of [...new Set(ordered)]) {
@@ -239,13 +228,5 @@ export function prepareStill(p,d,category,id,slot) {
   for (const r of refs) if (r.dataUrl?.length > 1048700) throw Error('参考图请压缩到768KB以内');
   view={...view,settings:{...view.settings,storyStyle:[view.settings.storyStyle,d.episodeStyles?.[canonical.episode]].filter(Boolean).join('；')}};
   const made = buildWorkflowPrompt(view,canonical,slot,{style:d.look,portraitStyle:{...(d.grades[id] || {}),...Object.fromEntries(Object.entries(d.slotGrades[key] || {}).filter(([,v])=>v))},aspect:d.aspect,forceAspect:d.forceChar,referenceCount:refs.length});
-  if (category === 'storyboard' && row.emotions) {
-    const notes = Object.entries(row.emotions).map(([cid, eid]) => {
-      const who = d.characters.find(c => c.id === cid);
-      const emo = PORTRAIT_EMOTIONS.find(e => e.id === eid);
-      return who && emo ? `${who.name} 的表情是${emo.label}：${emo.prompt}` : '';
-    }).filter(Boolean);
-    if (notes.length) made.prompt = `${made.prompt}\n表演：${notes.join('；')}。只改脸部情绪，身份和服装不变。`;
-  }
   return {name:`${canonical.name} · ${IMAGE_SLOTS[category].find(s=>s.id === slot).label}`.slice(0,120),kind:{characters:'角色',locations:'场景',props:'道具',storyboard:'分镜'}[category],prompt:made.prompt,ratio:made.aspect,resolution:d.resolution,references:refs,metadata:{entityId:id,entityName:canonical.name.slice(0,160),slot,episode:canonical.episode.slice(0,64)}};
 }

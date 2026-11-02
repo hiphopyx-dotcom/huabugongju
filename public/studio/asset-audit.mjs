@@ -1,4 +1,4 @@
-import {apiFetch, apiBase, rememberToken, hydrateAuthedImages} from './api-client.mjs?v=port9';
+import {apiFetch} from './api-client.mjs';
 async function benchFetch(path,opts){try{return await apiFetch(path,opts)}catch(e){if(e instanceof ReferenceError)return fetch(path,opts);throw e}}
 const E=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let accountId=null,epoch=0,chain=Promise.resolve(),seen=new Map(),view=0,filters={owner:'',kind:'',search:'',page:1,trash:'0'};
