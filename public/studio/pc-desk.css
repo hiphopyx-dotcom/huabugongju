@@ -93,3 +93,11 @@
 .pc-axis-actor{position:absolute;transform:translate(-50%,-50%);background:transparent!important;border:0!important;padding:0!important;cursor:grab;touch-action:none;min-width:50px}
 .pc-axis-actor svg{display:block;width:42px;height:68px;margin:auto}.pc-axis-actor span{font-size:11px}.pc-axis-actor:active{cursor:grabbing}
 .pc-script{min-height:420px}
+.pc-find{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.pc-find input{flex:1;min-width:12rem}
+.pc-fold{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:transparent;border:0;color:#f3ece4;padding:2px 0;cursor:pointer;font:inherit}
+.pc-fold span{font-family:"Noto Serif SC","Songti SC",Georgia,serif;font-size:22px;font-weight:500}
+.pc-caret{width:1em;color:#9a9086;font-style:normal}
+.pc-caret[data-open="0"]::before{content:"▸"}
+.pc-caret[data-open="1"]::before{content:"▾"}
+.pc-fold-body{margin-top:12px;display:grid;gap:10px}
