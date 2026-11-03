@@ -136,17 +136,17 @@ export async function materializeReferences(job, {dir, configuration, fetcher, e
   return {dir: root, files};
 }
 
-export async function processJob(job, {chromium, profileDir, archiveDir = ARCHIVE_DIR, configuration, fetcher, extraOrigins, log = console.log, open = openProfile, imagine = imagineOnce, compress = saveAndCompress, materialize = materializeReferences} = {}) {
+export async function processJob(job, {chromium, profileDir, archiveDir = ARCHIVE_DIR, configuration, fetcher, extraOrigins, log = console.log, debugDir = '', open = openProfile, imagine = imagineOnce, compress = saveAndCompress, materialize = materializeReferences} = {}) {
   if (job?.type === 'video') return {result: {error: 'REJECTED', reason: 'UNSUPPORTED'}, stats: {ms: 0}};
   const started = Date.now(); let context, files;
   try {
     files = await materialize(job, {configuration, fetcher, extraOrigins});
     try {context = await open({chromium, profileDir});}
     catch (error) {if (error instanceof MemberStop) throw error; const e = new MemberStop('PAGE', true); e.step = '启动'; e.detail = '浏览器未能打开'; throw e;}
-    const image = await imagine(context, {prompt: job.prompt, ratio: job.ratio, files: files.files, uploadStep: job.type === 'edit' ? '改图' : '上传参考图'}, {log: line => log(`[${stamp()}] ${line}`)});
+    const image = await imagine(context, {prompt: job.prompt, ratio: job.ratio, files: files.files, uploadStep: job.type === 'edit' ? '改图' : '上传参考图'}, {log: line => log(`[${stamp()}] ${line}`), shotDir: debugDir ? path.join(debugDir, String(job.id)) : ''});
     const saved = await compress(image.bytes, {id: job.id, archiveDir});
     const dataUrl = validateDataUrl(`data:${saved.mime};base64,${saved.bytes.toString('base64')}`);
-    return {result: {dataUrl}, stats: {ms: Date.now() - started, before: saved.before, after: saved.after, file: saved.original}};
+    return {result: {dataUrl}, stats: {ms: Date.now() - started, before: saved.before, after: saved.after, file: saved.original, ...(image.trace?.length ? {trace: image.trace} : {})}};
   } catch (error) {
     if (error?.kind === 'revoked' || error?.kind === 'expired') throw error;
     if (!(error instanceof MemberStop)) {
@@ -156,7 +156,7 @@ export async function processJob(job, {chromium, profileDir, archiveDir = ARCHIV
       error = wrapped;
     }
     log(`[${stamp()}] 任务失败：${error.reason}${error.detail ? '（' + error.detail + '）' : ''}${error.step ? '，卡在步骤：' + error.step : ''}`);
-    return {result: completionFor(error), stats: {ms: Date.now() - started, ...(error.step ? {step: error.step} : {}), ...(error.detail ? {detail: error.detail} : {})}};
+    return {result: completionFor(error), stats: {ms: Date.now() - started, ...(error.step ? {step: error.step} : {}), ...(error.detail ? {detail: error.detail} : {}), ...(error.trace?.length ? {trace: error.trace} : {})}};
   } finally {
     await context?.close().catch(() => {});
     if (files?.dir) await fs.rm(files.dir, {recursive: true, force: true}).catch(() => {});
@@ -204,7 +204,7 @@ export async function startMemberWorker({configFile = path.join(HOME_DIR, 'confi
           log(`[${stamp()}] 领取任务 ${job.id}${account.label ? '（账号 ' + account.label + '）' : ''}`);
           const outcome = job.type === 'video'
             ? {result: {error: 'REJECTED', reason: 'UNSUPPORTED'}, stats: {ms: 0}}
-            : await runJob(job, {chromium, profileDir: account.profileDir, archiveDir, configuration: connection, extraOrigins: settings.extraOrigins, log});
+            : await runJob(job, {chromium, profileDir: account.profileDir, archiveDir, configuration: connection, extraOrigins: settings.extraOrigins, log, debugDir: path.join(stateDir, 'shots')});
           const {result, stats} = outcome;
           const response = await request('complete', {id: job.id, lease: job.lease, ...identity, ...result});
           await fs.unlink(intent).catch(() => {});

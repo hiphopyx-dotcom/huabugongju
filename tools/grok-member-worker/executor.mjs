@@ -5,6 +5,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {execFile} from 'node:child_process';
+import {createHash} from 'node:crypto';
 import {promisify} from 'node:util';
 
 const run = promisify(execFile);
@@ -114,6 +115,48 @@ export async function attachReferences({files, step = '上传参考图', findCon
   try {await setFiles(control, files);} catch {throw structureStop(step);}
   return {uploaded: files.length, limit: plan.limit};
 }
+/**
+ * Waits until every reference shows as a thumbnail in the composer, nothing is still uploading,
+ * and 提交 is clickable. A slow or failed upload is a definite structure stop (quota refunded),
+ * so a prompt is never submitted as text-only by accident.
+ */
+export async function waitReferencesReady({count, read, sleep, step = '上传参考图', ms = 30000, now = Date.now}) {
+  const end = now() + ms;
+  let last = {thumbs: 0, uploading: false, submitEnabled: false};
+  for (;;) {
+    last = await read();
+    if (last.thumbs >= count && !last.uploading && last.submitEnabled) return last;
+    if (now() > end) {
+      const e = structureStop(step);
+      e.detail = `参考图未上传完成（缩略图 ${last.thumbs}/${count}${last.uploading ? '，仍在上传' : ''}${last.submitEnabled ? '' : '，提交不可点'}）`;
+      throw e;
+    }
+    await sleep(500);
+  }
+}
+/** True when w:h is within 8% of the requested ratio (or no ratio was asked). */
+export function ratioMatches(w, h, ratio) {
+  if (!ratio) return true;
+  const [a, b] = String(ratio).split(':').map(Number);
+  if (!(a > 0 && b > 0 && w > 0 && h > 0)) return false;
+  return Math.abs(Math.log((w / h) / (a / b))) < 0.08;
+}
+/**
+ * Picks this submission's image from candidates that are new since submit and outside feed/promo areas.
+ * All candidates must come from one result group; reference images and wrong shapes are refused.
+ * Returns null when nothing trustworthy is there yet.
+ */
+export function pickResult(candidates, {refSrcs = [], ratio = ''} = {}) {
+  const ok = (candidates || []).filter(c => !c.excluded && c.w >= 512 && c.h >= 512 && !refSrcs.includes(c.src));
+  if (!ok.length) return null;
+  const groups = new Map();
+  for (const c of ok) groups.set(c.group, [...(groups.get(c.group) || []), c]);
+  // The result of this submission is the newest group; older new groups are lazy-loaded page content.
+  const group = [...groups.values()].sort((a, b) => (b[0].order ?? 0) - (a[0].order ?? 0))[0];
+  const best = group.filter(c => ratioMatches(c.w, c.h, ratio)).sort((a, b) => b.w * b.h - a.w * a.h)[0];
+  return best || null;
+}
+export const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 export function grokRatio(ratio) {
   if (!ratio || GROK_RATIOS.includes(ratio)) return ratio || '';
   const [w, h] = String(ratio).split(':').map(Number);
@@ -164,13 +207,22 @@ export async function openProfile({chromium, profileDir}) {
 }
 
 /** Runs one prompt on grok.com/imagine and returns the original image bytes. */
-export async function imagineOnce(context, {prompt, ratio, files = [], uploadStep = '上传参考图'}, {timeoutMs = 240000, log = () => {}, dryRun = false} = {}) {
-  let current = '', submitted = false;
+export async function imagineOnce(context, {prompt, ratio, files = [], uploadStep = '上传参考图'}, {timeoutMs = 240000, log = () => {}, dryRun = false, trace = [], shotDir = ''} = {}) {
+  let current = '', submitted = false, page;
+  const note = async (name, state = {}) => {
+    const entry = {step: name, at: Date.now(), ...state};
+    if (shotDir && page) {
+      const file = path.join(shotDir, `${Date.now()}-${name}.png`);
+      try {await fs.mkdir(shotDir, {recursive: true}); await page.screenshot({path: file}); entry.shot = file;} catch {}
+    }
+    trace.push(entry);
+  };
   const step = name => {current = name; log('步骤：' + name);};
   const fail = (reason = 'PAGE', definite = true) => {const e = new MemberStop(reason, definite); e.step = current; return e;};
   const structure = (name, definite = true) => structureStop(name || current, definite);
   try {
-    const page = context.pages()[0] || await context.newPage();
+    // A fresh tab per job: a reused tab can still show an earlier job's results.
+    page = await context.newPage();
     step('打开页面');
     await page.goto(IMAGINE_URL, {waitUntil: 'domcontentloaded', timeout: 60000});
     await humanPause(page, 3000, 5000);
@@ -216,14 +268,28 @@ export async function imagineOnce(context, {prompt, ratio, files = [], uploadSte
         },
         setFiles: (control, list) => control.locator.setInputFiles(list),
       });
+      await chooseReferenceUse(page);
+      const ready = await waitReferencesReady({count: files.length, step: uploadStep, sleep: ms => page.waitForTimeout(ms), read: () => readComposer(page, findSubmitButton(page))});
+      await note('上传后', ready);
     }
     step('输入');
     await box.click(); await humanPause(page, 400, 900);
     await page.keyboard.type(prompt.trim(), {delay: rand(25, 60)});
     await humanPause(page, 800, 1600);
-    const before = new Set(await page.evaluate(() => [...document.images].map(i => i.currentSrc || i.src)));
     step('提交');
-    const findSubmit = () => page.getByRole('button', {name: SUBMIT}).or(page.locator('button[type="submit"]'));
+    const findSubmit = () => findSubmitButton(page);
+    // Re-check what Grok will actually run before spending the member's quota.
+    if (await imageMode.getAttribute('aria-checked') === 'false') throw structure('切图片');
+    if (want) {
+      const picker = await visible(page.getByRole('button', {name: /宽高比|aspect ratio/i}));
+      if (!picker || !(await picker.innerText().catch(() => '')).includes(want)) throw structure('选宽高比');
+    }
+    const composer = await readComposer(page, findSubmit());
+    if (files.length && composer.thumbs < files.length) throw structure(uploadStep);
+    const refSrcs = composer.srcs;
+    // Everything on the page now is old: only elements that appear after submit can be this job's result.
+    await page.evaluate(() => {for (const el of document.querySelectorAll('*')) el.setAttribute('data-jbp-pre', '1');});
+    await note('提交前', {ratio: want, refs: composer.thumbs});
     const boxText = async () => ((await box.inputValue().catch(() => null)) ?? (await box.innerText().catch(() => ''))).trim();
     if (dryRun) {
       if (!await waitVisible(page, findSubmit, 10000)) throw fail();
@@ -245,37 +311,95 @@ export async function imagineOnce(context, {prompt, ratio, files = [], uploadSte
     while (Date.now() < deadline) {
       await page.waitForTimeout(3000);
       await stopIfBlocked(page);
-      const found = await page.evaluate(seen => {
-        const fresh = [...document.images].filter(i => !seen.includes(i.currentSrc || i.src) && i.complete && i.naturalWidth >= 512 && i.naturalHeight >= 512 && i.offsetParent);
-        return fresh.map(i => ({src: i.currentSrc || i.src, w: i.naturalWidth, h: i.naturalHeight}));
-      }, [...before]);
-      const best = found.sort((a, b) => b.w * b.h - a.w * a.h)[0] || null;
+      const best = pickResult(await readFreshImages(page), {refSrcs, ratio: want});
       if (best && pick?.src === best.src) {if (Date.now() - stableSince > 6000) break;}
       else if (best) {pick = best; stableSince = Date.now();}
     }
+    await note('选结果', pick ? {src: pick.src.slice(0, 120), w: pick.w, h: pick.h, group: pick.group} : {found: false});
     if (!pick) throw fail('TIMEOUT', false);
     step('下载');
     await humanPause(page);
     const bytes = await downloadOriginal(page, pick.src);
     if (!bytes?.length) throw structure('下载', false);
-    return {bytes, width: pick.w, height: pick.h};
+    // Never hand a member their own reference back as the result.
+    const refHashes = new Set(await Promise.all(files.map(async f => sha256(await fs.readFile(f)))));
+    if (refHashes.has(sha256(bytes))) {const e = fail('PAGE', false); e.detail = '结果与参考图相同'; throw e;}
+    return {bytes, width: pick.w, height: pick.h, trace};
   } catch (error) {
     let out = error;
     // Nothing reached Grok before the click: an unexpected page error is a definite failure, so the quota is refunded.
     if (!(out instanceof MemberStop) && !submitted) {out = new MemberStop('PAGE', true); out.detail = String(error?.message || error).slice(0, 200);}
     if (out && typeof out === 'object' && !out.step) out.step = current;
+    if (out && typeof out === 'object') out.trace = trace;
     log('卡在步骤：' + (current || '启动') + '（' + (out?.reason || out?.message || out) + (out?.detail ? '：' + out.detail : '') + '）');
     throw out;
   }
 }
 
-/** Prefer the page's own download button; otherwise read the image the page already shows. */
+function findSubmitButton(page) {return page.getByRole('button', {name: SUBMIT}).or(page.locator('button[type="submit"]'));}
+
+/** If Grok asks how to use an uploaded image (e.g. 首帧 vs 参考), pick reference. */
+async function chooseReferenceUse(page) {
+  const choice = await waitVisible(page, () => page.getByRole('button', {name: /^(用作参考|作为参考|参考图|参考|Use as reference|Reference)$/i}).or(page.getByRole('menuitem', {name: /参考|reference/i})).or(page.getByRole('radio', {name: /参考|reference/i})), 2000);
+  if (choice) {await choice.click().catch(() => {}); await humanPause(page, 400, 900);}
+}
+
+/** Reads the composer: reference thumbnails, whether anything is still uploading, and whether 提交 is enabled. */
+async function readComposer(page, submit) {
+  const box = page.locator('form').filter({has: page.locator('[contenteditable="true"], textarea')}).first();
+  const state = await box.evaluate(form => {
+    const imgs = [...form.querySelectorAll('img')].filter(i => i.offsetParent && i.complete && i.naturalWidth > 0);
+    const uploading = !!form.querySelector('[role="progressbar"], progress, [aria-busy="true"], [class*="spinner" i], [class*="loading" i], [class*="uploading" i]');
+    return {thumbs: imgs.length, srcs: imgs.map(i => i.currentSrc || i.src), uploading};
+  }).catch(() => ({thumbs: 0, srcs: [], uploading: false}));
+  const btn = await visible(submit);
+  state.submitEnabled = btn ? await btn.isEnabled().catch(() => false) : false;
+  return state;
+}
+
+/**
+ * Lists images added after submit. Each is grouped by the outermost new element holding it, so one
+ * submission's result card is one group. Images inside links, nav/aside, feeds or promo blocks are excluded.
+ */
+async function readFreshImages(page) {
+  return page.evaluate(() => {
+    const promo = /广告|推广|赞助|Sponsored|Promoted|Advertisement|Upgrade to|升级到|探索|Explore|Discover|社区|Community|Trending|热门/i;
+    const out = [];
+    let order = 0;
+    const tops = new Map();
+    for (const el of document.querySelectorAll('*')) if (!el.hasAttribute('data-jbp-pre')) el.setAttribute('data-jbp-order', el.getAttribute('data-jbp-order') || String(++order + Date.now()));
+    for (const img of document.images) {
+      if (img.hasAttribute('data-jbp-pre') || !img.complete || !img.offsetParent) continue;
+      let top = img;
+      while (top.parentElement && !top.parentElement.hasAttribute('data-jbp-pre')) top = top.parentElement;
+      if (!tops.has(top)) tops.set(top, tops.size + 1);
+      const region = img.closest('a[href], nav, aside, header, footer, [role="feed"], [role="complementary"], [aria-label*="feed" i], [data-testid*="feed" i], [data-testid*="promo" i]');
+      const text = (top.innerText || '').slice(0, 400);
+      out.push({src: img.currentSrc || img.src, w: img.naturalWidth, h: img.naturalHeight, group: tops.get(top), order: Number(top.getAttribute('data-jbp-order')) || 0, excluded: !!region || promo.test(text)});
+    }
+    return out;
+  });
+}
+
+/** Uses only the download button inside the image's own card; otherwise reads the image by its src. */
 async function downloadOriginal(page, src) {
-  const image = page.locator(`img[src="${src.replace(/"/g, '\\"')}"]`).first();
   try {
-    await image.hover(); await humanPause(page, 500, 1000);
-    const button = await visible(page.getByRole('button', {name: /下载|download/i}));
-    if (button) {
+    const found = await page.evaluate(want => {
+      document.querySelectorAll('[data-jbp-dl]').forEach(b => b.removeAttribute('data-jbp-dl'));
+      const img = [...document.images].find(i => (i.currentSrc || i.src) === want);
+      const isDl = b => /下载|download/i.test((b.getAttribute('aria-label') || '') + ' ' + (b.innerText || ''));
+      for (let card = img?.parentElement, depth = 0; card && depth < 6; card = card.parentElement, depth++) {
+        // Stop once the box holds another large image: beyond that it is no longer this image's card.
+        if ([...card.querySelectorAll('img')].some(i => i !== img && i.naturalWidth >= 256)) break;
+        const btn = [...card.querySelectorAll('button, [role="button"]')].find(isDl);
+        if (btn) {btn.setAttribute('data-jbp-dl', '1'); return true;}
+      }
+      return false;
+    }, src);
+    if (found) {
+      await page.locator(`img[src="${src.replace(/"/g, '\\"')}"]`).first().hover().catch(() => {});
+      await humanPause(page, 500, 1000);
+      const button = page.locator('[data-jbp-dl]').first();
       const [download] = await Promise.all([page.waitForEvent('download', {timeout: 20000}), button.click()]);
       const file = await download.path();
       if (file) return await fs.readFile(file);
