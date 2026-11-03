@@ -72,3 +72,24 @@ test('a browser that never opened is a definite failure (refunded), not uncertai
   assert.deepEqual(result, {error: 'REJECTED', reason: 'PAGE'});
   assert.equal(stats.step, '启动');
 });
+
+import {waitReferencesReady, pickResult, ratioMatches} from './executor.mjs';
+test('references: submit waits for thumbnails, upload end and an enabled button; timeout is a refunded structure stop', async () => {
+  const states = [{thumbs: 0, uploading: true, submitEnabled: false}, {thumbs: 1, uploading: true, submitEnabled: true}, {thumbs: 1, uploading: false, submitEnabled: true}];
+  let i = 0;
+  const ready = await waitReferencesReady({count: 1, read: async () => states[Math.min(i++, 2)], sleep: async () => {}});
+  assert.equal(ready.thumbs, 1); assert.equal(i, 3);
+  let t = 0;
+  await assert.rejects(waitReferencesReady({count: 2, read: async () => ({thumbs: 1, uploading: false, submitEnabled: true}), sleep: async () => {}, now: () => (t += 1000), ms: 5000, step: '改图'}),
+    e => e.reason === 'STRUCTURE' && e.definite === true && e.step === '改图' && /1\/2/.test(e.detail));
+});
+test('result: only the newest group outside feeds/promos, never the reference, and only the requested shape', () => {
+  assert.ok(ratioMatches(832, 1248, '2:3')); assert.ok(!ratioMatches(1024, 1024, '2:3'));
+  const ad = {src: 'ad', w: 1600, h: 2400, group: 2, order: 9, excluded: true};
+  const old = {src: 'feed', w: 2000, h: 3000, group: 1, order: 1};
+  const mine = {src: 'mine', w: 832, h: 1248, group: 3, order: 5};
+  assert.equal(pickResult([ad, old, {...mine, order: 10}], {ratio: '2:3'}).src, 'mine');
+  assert.equal(pickResult([ad], {ratio: '2:3'}), null);
+  assert.equal(pickResult([{...mine, order: 10, src: 'ref'}], {refSrcs: ['ref']}), null);
+  assert.equal(pickResult([{...mine, order: 10, w: 1024, h: 1024}], {ratio: '2:3'}), null);
+});
