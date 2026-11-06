@@ -6,4 +6,6 @@
 
 这是提示词库接入，不安装或调用第三方 Agent 工具包，也不新增视频生成、配音或服务端渲染能力。此前研究的 video-shotcraft、ecommerce-video-skills 等项目提供了产品定位参考，本次没有复制其代码、素材或技能内容。video-talkcraft 的非商业许可证组件未引入。
 
+叙事向另见 `docs/seedance-skill-os.md` 与视频页「导演配方」：参考 Seedance 2.0 Skill OS 的片场规矩，落地原创提示词骨架，同样不安装其 Agent 技能包。
+
 校验：tests/video-templates.test.mjs 覆盖六类模板、时码完整覆盖、旧工程与不同长度；tests/ui.test.mjs 覆盖独立区域、追加、替换、撤销及任务来源快照。
