@@ -6,6 +6,8 @@
 .still-head h3 { margin: 0; font-size: 18px; }
 .still-status, .still-note, .still-footnote { color: #bdbdbd; }
 .still-error { color: #ffb4a8; }
+.still-rehearsal { white-space: pre-wrap; margin: 8px 0; padding: 8px 10px; border-radius: 10px; background: #241f14; color: #f3e6c4; font: 12px/1.45 ui-monospace, monospace; overflow-wrap: anywhere; }
+.image-stage .still-error, .image-dock .still-error { margin: 8px 0; }
 .still-cols { display: grid; grid-template-columns: 1.4fr .8fr; gap: 16px; align-items: start; }
 .still-refs { display: flex; gap: 10px; flex-wrap: wrap; }
 .still-ref, .still-output { position: relative; margin: 0; width: 150px; }
