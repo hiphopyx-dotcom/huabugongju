@@ -6,45 +6,57 @@ diff -ruN a/app.mjs b/app.mjs
  import {createImageWorkshop,imageRequest,rememberImage,galleryBlobUrl,galleryDataUrl,imageContentUrl,catalogImages,mergeGalleryItems} from './image-workshop.mjs';
  import {catalogGenerated,catalogUrl} from './asset-catalog.mjs';
 -import {stampSeq} from './seq-stamp.mjs';
-+import {appendRefPrompt, classifyStillReferences, planStillReferences, presentSeq, renderStillCompare, stillRequestBody} from './still-refs.mjs';
++import {appendRefPrompt, classifyStillReferences, collectStillRefs, mapStillResolution, planStillReferences, presentSeq, readStillRefSource, rehearseStillRequest, renderStillCompare, renderStillRehearsal, stillRequestBody} from './still-refs.mjs';
  import {createPianchangDesk} from './pianchang-desk.mjs';
  import {releaseHeavyStills, backfillEmptySlots, ensureDesk} from './pianchang-core.mjs';
  import {packForCloud} from './project-pack.mjs';
-@@ -515,6 +515,16 @@
+@@ -515,6 +515,19 @@
   placeScriptFloats();placeEditFloats();
   }finally{panelFitLock=0}
  }
 +function stillPreviewFor(n){
-+ const references=imageRefs(n).map(a=>n.params?.stageFrameId&&a.id===n.params.stageFrameId?{...a,role:'stage_frame'}:a);
++ const assembly=imageRefPlan(n);
++ const references=assembly.refs.map(a=>n.params?.stageFrameId&&a.id===n.params.stageFrameId?{...a,role:'stage_frame'}:a);
 + const plan=classifyStillReferences(references,{wire:'still',limit:3,origin:location.origin});
++ if(assembly.omitted.length)plan.diagnostics=[...plan.diagnostics,`连线上还有参考没纳入这次的 3 张：${assembly.omitted.join('、')}`];
 + const task=(P.tasks||[]).find(t=>t.data?.nodeId===n.id);
 + const result=asset(n.resultAssetId);
 + const failed=task?.status==='failed';
 + const src=typeof result?.src==='string'?result.src:'';
-+ const run={status:n.params?.phase==='running'?'running':failed?'failed':src?'done':'idle',output:src,held:src,error:failed?(task.error||'出图失败'):'',seqLabel:result?.metadata?.seqLabel||'',attempt:Number(n.params?.attempt)||0};
++ const nodeError=String(n.params?.stillError||'');
++ const run={status:n.params?.phase==='running'?'running':failed?'failed':src?'done':'idle',output:src,held:src,error:nodeError||(failed?(task.error||'出图失败'):''),seqLabel:result?.metadata?.seqLabel||'',attempt:Number(n.params?.attempt)||0};
 + return renderStillCompare({plan,run,title:'这一镜要发送的参考',retryAct:'image-generate'});
 +}
  function paintImageChrome(){
   if(!imagePhaseReady&&P){imagePhaseReady=true;for(const n of P.nodes)if(n?.params?.phase==='running')n.params.phase=''}
   document.querySelectorAll('#imageDock,#imageTools,#imageBanner,#imagePop').forEach(el=>el.remove());
-@@ -522,7 +532,7 @@
+@@ -522,7 +535,7 @@
   if(imagePick)board.insertAdjacentHTML('beforeend',ImageNode.banner(imagePick.mode));
   const n=node(selected);if(!n||n.type!=='image')return;
   ImageNode.ensure(n);
 - world.insertAdjacentHTML('beforeend',ImageNode.dock(n));
-+ world.insertAdjacentHTML('beforeend',ImageNode.dock(n,{stillPreview:stillPreviewFor(n)}));
++ world.insertAdjacentHTML('beforeend',ImageNode.dock(n,{stillPreview:stillPreviewFor(n),stillRehearsal:renderStillRehearsal(n.params?.stillRehearsal)}));
   const results=n.params.results||[];
   if(n.params.phase!=='running'&&(n.resultAssetId||results.length))world.insertAdjacentHTML('beforeend',ImageNode.tools(n));
   const html=imagePop?ImageNode.popover(n,imagePop):'';
-@@ -901,12 +911,15 @@
+@@ -897,16 +910,23 @@
+  }
+ }
+ function mediaSrc(asset){const src=String(asset?.src||'');return /^(data:image\/|https?:)/.test(src)?src:''}
+-function stillMeta(n){const role=n?.params?.assetRole||'';const kind=role==='人物'||role==='场景'||role==='道具'||role==='分镜'?role:(role==='角色'?'人物':'分镜');let shotNo='';if(n?.params?.shotId){const i=(P.shots||[]).findIndex(s=>s.id===n.params.shotId);if(i>=0)shotNo=String(i+1)}return {projectId:P?.id||'',projectName:P?.title||'',name:n?.name||'',entityKind:kind,shotNo}}
++function stillRefRead(ref){return readStillRefSource(typeof ref==='string'?ref:(ref?.src||''),{origin:location.origin,name:typeof ref==='string'?'参考图':(ref?.name||'参考图'),readLocal:()=>!ref||typeof ref==='string'?'':(galleryDataUrl(ref.imageLibraryId||ref.id)||galleryDataUrl(ref.id)||''),fetchImpl:(url,init)=>fetch(url,init)})}
++function stillMeta(n){const role=n?.params?.assetRole||'';const kind=role==='人物'||role==='场景'||role==='道具'||role==='分镜'?role:(role==='角色'?'人物':'分镜');let shotNo='';if(n?.params?.shotId){const i=(P.shots||[]).findIndex(s=>s.id===n.params.shotId);if(i>=0)shotNo=String(i+1)}return {projectId:P?.id||'',projectName:P?.title||'',name:n?.name||'',entityKind:kind,shotNo,resolution:n?.params?.resolution||''}}
  async function siteStill(prompt, ratio, refs, meta){
   const extra=meta&&typeof meta==='object'?meta:{};
   const cap=extra.refCap===4?4:3;
 - const posted=await fetch('/api/pianchang-still',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json',...memberHeaders()},body:JSON.stringify({prompt,aspect:ratio||'16:9',resolution:'1k',refs:(refs||[]).filter(src=>String(src).startsWith('data:')).slice(0,cap),projectId:extra.projectId||'',projectName:extra.projectName||'',name:extra.name||'',entityKind:extra.entityKind||'',shotNo:extra.shotNo||''})});
 + const list=Array.isArray(refs)?refs:[];
-+ const planned=await planStillReferences(list,{wire:'still',limit:cap,origin:location.origin,ratio:ratio||'16:9',read:extra.read||(ref=>stillDataUrl(typeof ref==='string'?ref:(ref?.src||''),{readLocal:()=>!ref||typeof ref==='string'?'':(galleryDataUrl(ref.imageLibraryId||ref.id)||galleryDataUrl(ref.id)||''),fetch:url=>fetch(url,{credentials:'same-origin'})}))});
++ const planned=await planStillReferences(list,{wire:'still',limit:cap,origin:location.origin,ratio:ratio||'16:9',read:extra.read||stillRefRead});
 + const named=list.some(ref=>ref&&typeof ref==='object');
-+ const posted=await fetch('/api/pianchang-still',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json',...memberHeaders()},body:JSON.stringify(stillRequestBody({prompt:named?appendRefPrompt(prompt,planned):prompt,ratio,plan:planned,meta:extra}))});
++ const promptOut=named?appendRefPrompt(prompt,planned):prompt;
++ const body=stillRequestBody({prompt:promptOut,ratio,plan:planned,meta:extra,resolution:extra.resolution});
++ if(extra.rehearse)return rehearseStillRequest({prompt:promptOut,ratio,plan:planned,resolution:extra.resolution,omitted:extra.omitted});
++ const posted=await fetch('/api/pianchang-still',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json',...memberHeaders()},body:JSON.stringify(body)});
   const data=await posted.json().catch(()=>({}));
   if(!posted.ok||!data.dataUrl)throw Error(data.error||'出图失败');
 - const label=String(data.seqLabel||'');
@@ -56,7 +68,7 @@ diff -ruN a/app.mjs b/app.mjs
  }
  async function siteClip(prompt, ratio, duration, images, onProgress){
   const usable=(images||[]).map(mediaSrc).filter(Boolean);
-@@ -954,7 +967,7 @@
+@@ -954,7 +974,7 @@
    try{src=await siteClip(base.prompt,base.ratio,base.duration,clipImages,pct=>{if(videoJob!==token||!n.params)return;if(typeof pct==='number')noteRealProgress(n,pct)})}
    catch(err){if(videoJob===token){videoJob=null;finishJobProgress(n,false);trackNodeTask('视频',n,'failed',{error:err.message||'出视频失败'});discard();drawCanvas()}return toast(err.message||'出视频失败')}
    if(videoJob!==token){finishJobProgress(n,false);discard();drawCanvas();return}
@@ -65,41 +77,126 @@ diff -ruN a/app.mjs b/app.mjs
    token.born.push(made.id);ids.push(made.id);
    commitGenerated(n.id,made);
    rememberCatalog(made,n);
-@@ -994,8 +1007,8 @@
+@@ -994,8 +1014,9 @@
    }catch{}
   })();
  }
 -function imageRefs(n){const ids=[...(n.assetIds||[])];return ids.map(id=>asset(id)).filter(a=>a&&a.kind==='image').slice(0,3)}
 -function pinShotStage(img,shot){const src=(Array.isArray(shot?.stageRefs)?shot.stageRefs:[]).find(item=>item?.role==='stage_frame'&&String(item.src||'').startsWith('data:image/'))?.src;if(!img?.params)return;if(!img.params.ratioSet&&ImageNode.RATIOS.includes(defaultAspect(P)))img.params.ratio=defaultAspect(P);if(!src)return;const made={id:C.uid(),name:'这一镜白模',kind:'image',type:'分镜',src,created:Date.now(),locked:false,tags:'',description:'这一镜白模机位'};P.assets.push(made);img.assetIds=[made.id,...(img.assetIds||[]).filter(id=>id!==made.id)].slice(0,3);img.params.stageFrameId=made.id}
-+function imageRefs(n){const ids=[...(n.assetIds||[])];return ids.map(id=>asset(id)).filter(a=>a&&a.kind==='image')}
++function imageRefPlan(n){const incoming=(P.edges||[]).filter(e=>e.to===n.id).map(e=>({from:node(e.from)}));return collectStillRefs({node:n,edges:incoming,lookup:id=>asset(id),limit:3})}
++function imageRefs(n){return imageRefPlan(n).refs}
 +function pinShotStage(img,shot){const src=(Array.isArray(shot?.stageRefs)?shot.stageRefs:[]).find(item=>item?.role==='stage_frame'&&String(item.src||'').startsWith('data:image/'))?.src;if(!img?.params)return;if(!img.params.ratioSet&&ImageNode.RATIOS.includes(defaultAspect(P)))img.params.ratio=defaultAspect(P);if(!src)return;const made={id:C.uid(),name:'这一镜白模',kind:'image',type:'分镜',src,created:Date.now(),locked:false,tags:'',description:'这一镜白模机位'};P.assets.push(made);img.assetIds=[made.id,...(img.assetIds||[]).filter(id=>id!==made.id)];img.params.stageFrameId=made.id}
  function imageUpstream(n){if(!n?.params?.autoLink)return '';try{const d=C.inputs(P,n.id);return d.nodes.filter(id=>id!==n.id).map(id=>node(id)?.prompt||'').filter(Boolean).join('\n')}catch{return ''}}
  let galleryCache=[];
  async function refreshGalleryCache(){try{galleryCache=await catalogImages()}catch{galleryCache=galleryCache||[]}}
-@@ -1032,10 +1045,11 @@
+@@ -1015,6 +1036,23 @@
+ function stopJobTimer(id){const rec=jobTimers.get(id);if(rec){clearInterval(rec.timer);jobTimers.delete(id)}}
+ function beginJobProgress(node,kind){if(!node?.id)return;stopJobTimer(node.id);const live0=liveNode(node.id)||node;const estimate=estimateSeconds(kind,live0);const wall=Number(live0.params?._wall)||Date.now();if(live0.params){live0.params._wall=wall;live0.params._started=wall}const paint=live=>{if(!live?.params)return;const started=Number(live.params._wall)||wall;live.params.phase='running';live.params.indeterminate=false;live.params._estimate=estimate;live.params._started=started;live.params._wall=started;const elapsed=Math.max(0,(Date.now()-started)/1000);const real=Number(live.params._real)||0;const shown=nextShown(live.params._shown,elapsed,estimate,real);live.params._shown=shown;live.params.progress=Math.max(1,Math.round(shown));const secs=Math.max(0,Math.floor(elapsed));live.params.progressNote=elapsed>=estimate?`已用 ${secs} 秒 · 比平时慢一点，仍在生成…`:`已用 ${secs} 秒 · 约剩 ${Math.max(1,Math.ceil(estimate-elapsed))} 秒`;paintJobProgress(live)};paint(live0);const timer=setInterval(()=>{if(!jobTimers.has(node.id))return;const live=liveNode(node.id);if(!live)return;paint(live)},250);jobTimers.set(node.id,{timer,started:wall,kind,estimate})}
+ function finishJobProgress(node,ok,quiet){if(!node)return Promise.resolve();const rec=jobTimers.get(node.id);const live=liveNode(node.id)||node;if(ok&&live?.params)live.params._reveal=1;stopJobTimer(node.id);const clear=()=>{if(!quiet)Collaboration.setJobPresence?.(null);const cur=liveNode(node.id)||live;if(!cur?.params)return;cur.params.phase='';cur.params.indeterminate=false;delete cur.params.progress;delete cur.params.progressNote;delete cur.params._estimate;delete cur.params._started;delete cur.params._real;delete cur.params._shown;delete cur.params._wall;delete cur.params._reveal};if(!ok||!live?.params){clear();return Promise.resolve()}if(!quiet){const wall=Number(live.params._wall)||rec?.started||Date.now();rememberGenTime(rec?.kind||'图片',(Date.now()-wall)/1000,live.params.duration)}const from=Math.max(1,Math.min(99,Math.round(Number(live.params.progress)||Number(live.params._shown)||1)));const steps=finishSteps(from);return new Promise(resolve=>{let i=0;const takenOver=()=>quiet&&(genFlight.has(node.id)||jobTimers.has(node.id));const tick=()=>{if(takenOver()){resolve();return}const cur=liveNode(node.id)||live;const pct=steps[Math.min(i,steps.length-1)];if(cur?.params){cur.params.phase='running';cur.params._reveal=1;cur.params.progress=pct;cur.params.progressNote=pct>=100?'已完成':'即将完成';paintJobProgress(cur,quiet)}i+=1;if(i<steps.length)setTimeout(tick,50);else{const holdUntil=Date.now()+REVEAL_HOLD_MS;const release=()=>{if(takenOver()){resolve();return}const left=holdUntil-Date.now();if(left>20){setTimeout(release,Math.min(50,left));return}clear();resolve()};setTimeout(release,REVEAL_HOLD_MS)}};tick()})}
++async function rehearseImageStill(n){
++ if(!n||n.type!=='image')return;
++ ImageNode.ensure(n);
++ const assembly=imageRefPlan(n);
++ const references=assembly.refs.map(a=>n.params?.stageFrameId&&a.id===n.params.stageFrameId?{...a,role:'stage_frame'}:a);
++ const base=ImageNode.requestBody(n,{upstream:imageUpstream(n),references,project:P});
++ try{
++  const summary=await siteStill(base.prompt,base.ratio,references,{...stillMeta(n),rehearse:true,omitted:assembly.omitted});
++  n.params.stillError='';
++  n.params.stillRehearsal=summary;
++  drawCanvas();
++ }catch(err){
++  n.params.stillRehearsal=null;
++  n.params.stillError=String(err?.message||'参考图没有读出来，没有发送');
++  drawCanvas();
++ }
++}
+ async function runImageNode(n){
+  if(!n?.id||genFlight.has(n.id))return;
+  genFlight.add(n.id);
+@@ -1030,13 +1068,14 @@
+  const discard=()=>{const live=liveNode(n.id)||n;const drop=new Set(token.born);if(!drop.size||!live.params)return;P.assets=P.assets.filter(a=>!drop.has(a.id));live.params.results=(live.params.results||[]).filter(id=>!drop.has(id));if(drop.has(live.resultAssetId))live.resultAssetId=live.params.results.at(-1)||'';live.params.resultIndex=Math.max(0,(live.params.results.length||1)-1);token.born=[];queueSave()};
+  token.discard=discard;
   imageJob=token;imagePop='';
-  n.params.phase='running';beginJobProgress(n,'图片');trackNodeTask('图片',n,'running',{},true);queueSave('generate');drawCanvas();suppressCollab++;latched=true;
+- n.params.phase='running';beginJobProgress(n,'图片');trackNodeTask('图片',n,'running',{},true);queueSave('generate');drawCanvas();suppressCollab++;latched=true;
++ n.params.stillError='';n.params.stillRehearsal=null;n.params.phase='running';beginJobProgress(n,'图片');trackNodeTask('图片',n,'running',{},true);queueSave('generate');drawCanvas();suppressCollab++;latched=true;
   const ids=[];
 + const meta=stillMeta(n);
   for(let i=0;i<count;i++){
    if(imageJob!==token){finishJobProgress(n,false);discard();drawCanvas();return}
    let src;
 -  try{const ordered=(base.references||[]).map(r=>r.src).filter(s=>String(s).startsWith('data:'));src=await siteStill(base.prompt,base.ratio,ordered.length?ordered:imageRefs(n).map(a=>a.src),stillMeta(n))}
+-  catch(err){if(imageJob===token){imageJob=null;finishJobProgress(n,false);trackNodeTask('图片',n,'failed',{error:err.message||'出图失败'});discard();drawCanvas()}return toast(err.message||'出图失败')}
 +  try{src=await siteStill(base.prompt,base.ratio,references,meta)}
-   catch(err){if(imageJob===token){imageJob=null;finishJobProgress(n,false);trackNodeTask('图片',n,'failed',{error:err.message||'出图失败'});discard();drawCanvas()}return toast(err.message||'出图失败')}
++  catch(err){if(imageJob===token){imageJob=null;const live=liveNode(n.id)||n;if(live?.params)live.params.stillError=err.message||'出图失败';finishJobProgress(n,false);trackNodeTask('图片',n,'failed',{error:err.message||'出图失败'});discard();drawCanvas()}return toast(err.message||'出图失败')}
    if(imageJob!==token){finishJobProgress(n,false);discard();drawCanvas();return}
    const role=n.params.assetRole||'分镜';
+   const made={id:C.uid(),name:(n.name||'图片')+' · 成图 '+(i+1),kind:'image',type:role,src,created:Date.now(),locked:false,tags:'',description:n.prompt||'',metadata:{from:'canvas',projectId:P.id,projectName:P.title||'',nodeId:n.id,nodeName:n.name||''}};
+@@ -1045,7 +1084,7 @@
+   rememberCatalog(made,n);
+  }
+  imageJob=null;await finishJobProgress(n,true);
+- if(!token.born.length){trackNodeTask('图片',n,'failed',{error:'生成失败'});drawCanvas();toast('生成失败')}
++ if(!token.born.length){if(n.params)n.params.stillError='生成失败';trackNodeTask('图片',n,'failed',{error:'生成失败'});drawCanvas();toast('生成失败')}
+  else{trackNodeTask('图片',n,'completed',{resultAssetId:n.resultAssetId||ids.at(-1)||''});drawCanvas();toast(count>1?token.born.length+' 张已放进节点，可切换':'图片已放进节点')}
+  }finally{if(latched){suppressCollab=Math.max(0,suppressCollab-1);Collaboration.noteLanded?.();queueSave('generate')}genFlight.delete(n.id)}
+ }
+@@ -1211,7 +1250,7 @@
+ 'image-pop-close':()=>{imagePop='';drawCanvas()},
+ 'image-model':e=>{const n=node(selected);if(!n)return;imagePop='';change(()=>{ImageNode.ensure(n);n.params.model=e.dataset.id})},
+ 'image-quality':e=>change(()=>{ImageNode.ensure(node(selected));node(selected).params.quality=e.dataset.value}),
+-'image-resolution':e=>change(()=>{ImageNode.ensure(node(selected));node(selected).params.resolution=e.dataset.value}),
++'image-resolution':e=>{const mapped=mapStillResolution(e.dataset.value);if(!mapped.enabled)return toast(mapped.label);change(()=>{ImageNode.ensure(node(selected));node(selected).params.resolution=e.dataset.value})},
+ 'image-bg':e=>change(()=>{ImageNode.ensure(node(selected));node(selected).params.background=e.dataset.value}),
+ 'image-ratio':e=>{const value=e.dataset.value;if(!ImageNode.RATIOS.includes(value))return toast('不支持的画幅: '+value);change(()=>{ImageNode.ensure(node(selected));const n=node(selected);n.params.ratio=value;n.params.ratioSet=true})},
+ 'image-count':e=>change(()=>{ImageNode.ensure(node(selected));node(selected).params.count=Number(e.dataset.value)||1}),
+@@ -1232,6 +1271,7 @@
+ 'image-style-pick':e=>{const n=node(selected);const item=ImageNode.STYLES.find(s=>s.id===e.dataset.id);if(!n||!item)return;const recent=[item.id,...styleRecent().filter(id=>id!==item.id)].slice(0,12);try{localStorage.setItem('jbp-style-recent',JSON.stringify(recent))}catch{}change(()=>{ImageNode.ensure(n);n.params.styleId=item.id;if(!String(n.prompt||'').includes(item.prompt))n.prompt=[n.prompt,item.prompt].filter(Boolean).join('\n')});close()},
+ 'image-style-fav':e=>{const id=e.dataset.id;const saved=styleList('jbp-style-saved');const next=saved.includes(id)?saved.filter(x=>x!==id):[id,...saved].slice(0,40);try{localStorage.setItem('jbp-style-saved',JSON.stringify(next))}catch{}openImageStyles()},
+ 'image-generate':()=>{const n=node(selected);if(!n)return toast('请先选中图片节点');return runImageNode(n)},
++'image-still-dry':()=>{const n=node(selected);if(!n||n.type!=='image')return toast('请先选中图片节点');return rehearseImageStill(n)},
+ 'image-cancel':()=>{const token=imageJob;imageJob=null;const n=node(selected);if(n)finishJobProgress(n,false);token?.discard?.();trackNodeTask('图片',n,'cancelled');drawCanvas();toast('已取消，不再等待这张图')},
+ 'image-result':e=>{const n=node(selected);if(!n)return;const ids=[...(n.params.results||[])];if(n.resultAssetId&&!ids.includes(n.resultAssetId))ids.unshift(n.resultAssetId);if(ids.length<2)return;change(()=>{let i=(Number(n.params.resultIndex)||0)+Number(e.dataset.dir||1);if(i<0)i=ids.length-1;if(i>=ids.length)i=0;n.params.resultIndex=i;n.resultAssetId=ids[i]})},
+ 'image-tool':e=>{const name=e.dataset.tool;if(!name)return;if(name==='展开'){const n=node(selected);const a=n&&asset(n.resultAssetId);if(!a?.src)return toast('还没有可预览的图片');return openModal(`<h2>预览</h2><img src="${a.src}" alt="" style="width:100%;border-radius:12px">`,true)}imagePop='';return Library.useTool(name)},
+@@ -1379,7 +1419,7 @@
+ 'help':()=>openModal(`<h2>创作流程</h2><ol class="help-list"><li>新建项目，在“导入剧本 / 拆镜”导入 TXT、DOCX、MD 或粘贴剧本。</li><li>选择本地或 AI 拆镜，核对原文后追加或替换分镜，再编辑镜头参数。</li><li>上传角色、场景、分镜图、视频和配乐；锁定参考。</li><li>正式版中连接节点，查看合并输入，保存生成任务。</li><li>给分镜绑定图片，推送到时间线；或直接加入媒体。</li><li>编辑片段、字幕与音量，播放预演。</li><li>导出分镜图、字幕、剪辑清单和 WebM 预演视频。</li><li>点击云保存；换设备在云端项目页恢复。也可导出完整 JSON 备份。</li></ol><p class="muted">画布：拖动背景平移，滚轮缩放；Esc 取消连线。Ctrl/⌘+S 保存，Ctrl/⌘+Z 撤销。</p>`)
+ };
+ function setRatio(r){if(!['16:9','9:16','1:1'].includes(r))return;const prev=P.settings.ratio;P.settings.ratio=r;[P.settings.width,P.settings.height]=r==='9:16'?[720,1280]:r==='1:1'?[1080,1080]:[1280,720];if(!P.settings.videoRatio||P.settings.videoRatio===prev)P.settings.videoRatio=r;if(P.pianchang&&(!P.pianchang.aspect||P.pianchang.aspect===prev))P.pianchang.aspect=r;for(const shot of P.shots||[])if(!shot.ratio||shot.ratio===prev)shot.ratio=r;for(const node of P.nodes||[])if(node.params&&(!node.params.ratio||node.params.ratio===prev))node.params.ratio=r}
+-let modalPointerOnBackdrop=false;let sendStamp=0;document.addEventListener('pointerdown',e=>{const bar=e.target?.closest?.('[data-video-seek]');if(bar){const v=bar.closest('.video-stage')?.querySelector('video');bar.dataset.wasPlaying=v&&!v.paused&&!v.ended?'1':''}modalPointerOnBackdrop=e.target?.id==='modal';const send=e.target.closest?.('[data-act="image-generate"],[data-act="video-generate"],[data-act="audio-generate"],[data-act="script-generate"]');if(!send)return;sendStamp=Date.now();const field=document.activeElement;if(field&&field!==send&&field.matches?.('[data-node-field],[data-node-param]'))field.dispatchEvent(new Event('input',{bubbles:true}))},true);document.addEventListener('pointerup',e=>{const bar=e.target?.closest?.('[data-video-seek]');if(!bar||bar.dataset.wasPlaying!=='1')return;const v=bar.closest('.video-stage')?.querySelector('video');if(v&&v.paused&&!v.ended)v.play?.().catch(()=>{})},true);document.addEventListener('click',async e=>{const act=e.target.closest('[data-act]');if(act){e.preventDefault();if(act.disabled)return;if(uiBusy&&!['close','export-stop'].includes(act.dataset.act))return toast('正在处理素材或云同步，请稍候');if(requestingMic)return toast('正在等待麦克风授权');if(recording&&!['record-stop'].includes(act.dataset.act))return toast('请先停止录音');if(exporting&&!['export-stop'].includes(act.dataset.act))return toast('导出期间请勿编辑项目');try{await actions[act.dataset.act]?.(act)}catch(err){toast(err.message)}return}const edge=e.target.closest('[data-edge]');if(edge){change(()=>P.edges=P.edges.filter(v=>v.id!==edge.dataset.edge));toast('连线已删除');return}const nd=e.target.closest('[data-node]');if(nd&&!e.target.closest('input,textarea,button'))takeCanvasNode(nd);if(e.target.id==='modal'&&modalPointerOnBackdrop)close()});
++let modalPointerOnBackdrop=false;let sendStamp=0;document.addEventListener('pointerdown',e=>{const bar=e.target?.closest?.('[data-video-seek]');if(bar){const v=bar.closest('.video-stage')?.querySelector('video');bar.dataset.wasPlaying=v&&!v.paused&&!v.ended?'1':''}modalPointerOnBackdrop=e.target?.id==='modal';const send=e.target.closest?.('[data-act="image-generate"],[data-act="image-still-dry"],[data-act="video-generate"],[data-act="audio-generate"],[data-act="script-generate"]');if(!send)return;sendStamp=Date.now();const field=document.activeElement;if(field&&field!==send&&field.matches?.('[data-node-field],[data-node-param]'))field.dispatchEvent(new Event('input',{bubbles:true}))},true);document.addEventListener('pointerup',e=>{const bar=e.target?.closest?.('[data-video-seek]');if(!bar||bar.dataset.wasPlaying!=='1')return;const v=bar.closest('.video-stage')?.querySelector('video');if(v&&v.paused&&!v.ended)v.play?.().catch(()=>{})},true);document.addEventListener('click',async e=>{const act=e.target.closest('[data-act]');if(act){e.preventDefault();if(act.disabled)return;if(uiBusy&&!['close','export-stop'].includes(act.dataset.act))return toast('正在处理素材或云同步，请稍候');if(requestingMic)return toast('正在等待麦克风授权');if(recording&&!['record-stop'].includes(act.dataset.act))return toast('请先停止录音');if(exporting&&!['export-stop'].includes(act.dataset.act))return toast('导出期间请勿编辑项目');try{await actions[act.dataset.act]?.(act)}catch(err){toast(err.message)}return}const edge=e.target.closest('[data-edge]');if(edge){change(()=>P.edges=P.edges.filter(v=>v.id!==edge.dataset.edge));toast('连线已删除');return}const nd=e.target.closest('[data-node]');if(nd&&!e.target.closest('input,textarea,button'))takeCanvasNode(nd);if(e.target.id==='modal'&&modalPointerOnBackdrop)close()});
+ let inputCheckpoint=false;
+ document.addEventListener('focusin',e=>{if(e.target.matches('input,textarea,select'))inputCheckpoint=false});
+ document.addEventListener('input',e=>{const el=e.target;if(exporting||uiBusy)return;const data=el.dataset;if(P?.shareReadonly&&(data.nodeField||data.nodeParam||data.scriptShot||data.scriptField||data.editDuration)){toast('这是只读分享，请先复制到我的项目');return}if(el.matches('[data-script-shot],[data-script-field]')){applyScriptEdit(el);return}if(el.matches('[data-edit-duration]')){const n=node(selected);if(n?.type==='edit'&&!n.locked){if(!inputCheckpoint){checkpoint();inputCheckpoint=true}EditNode.setDuration(n,el.value);const lab=document.querySelector('[data-edit-dur]');if(lab)lab.textContent=n.params.duration+'s';const sum=document.querySelector('#editDock [data-pop="params"]');if(sum)sum.textContent=EditNode.summary(n);queueSave()}return}if(el.matches('[data-video-seek]')){if(!VideoPlayer.shouldApplySeek({trusted:!!e.isTrusted,painting:el.dataset.painting==='1'}))return;const stage=el.closest('.video-stage');const v=stage?.querySelector('video');if(v){const known=Number.isFinite(v.duration)&&v.duration>0&&v.duration!==Infinity?v.duration:0;const target=VideoPlayer.rangeToTime(el.value,el.max,known);if(target==null)return;if(Math.abs((v.currentTime||0)-target)>0.04)v.currentTime=target;const time=stage.querySelector('[data-video-time]');if(time)time.textContent=VideoPlayer.clockLabel(target,known)}return}if(el.matches('[data-audio-seek]')){const a=el.closest('.audio-stage')?.querySelector('audio');if(a)a.currentTime=Number(el.value)||0;return}if(el.matches('[data-audio-knob]')){const n=node(selected);if(n?.type==='audio'&&!n.locked){if(!inputCheckpoint){checkpoint();inputCheckpoint=true}AudioNode.setKnob(n,el.dataset.key,el.value);const shown=AudioNode.formatKnob(el.dataset.key,n.params[el.dataset.key]);el.value=shown;const pair=el.parentElement?.querySelector(el.type==='range'?'input[type="number"]':'input[type="range"]');if(pair&&pair!==el)pair.value=shown;queueSave()}return}if(el.matches('[data-video-duration]')){const n=node(selected);if(n?.type==='video'&&!n.locked){if(!inputCheckpoint){checkpoint();inputCheckpoint=true}VideoNode.ensure(n);n.params.duration=VideoNode.clampDuration(n,el.value);const lab=document.querySelector('#videoDurLabel');if(lab)lab.textContent=n.params.duration+'s';const sum=document.querySelector('#videoDock [data-pop="params"]');if(sum)sum.textContent=VideoNode.summary(n);queueSave()}return}if(el.id==='videoSheetSearch'){videoQuery=el.value;const pos=el.selectionStart;paintVideoChrome();const box=$('#videoSheetSearch');if(box){box.focus();box.setSelectionRange(pos,pos)}return}if(el.id==='assetSearch'){search=el.value;const pos=el.selectionStart;render();$('#assetSearch').focus();$('#assetSearch').setSelectionRange(pos,pos);return}if(el.classList.contains('video-ref')){if(!inputCheckpoint){checkpoint();inputCheckpoint=true}P.settings.videoRefs=$$('.video-ref:checked').map(e=>e.value);queueSave();refreshVideoTemplatePreview();return}if(data.videoShot){const shot=(P.settings.videoShots||[]).find(s=>s.id===data.videoShot);if(!shot)return;if(!inputCheckpoint){checkpoint();inputCheckpoint=true}shot[data.key]=data.key==='duration'?Number(el.value):el.value;queueSave();updateVideoSequenceSummary();return}if(!data.field&&!data.setting&&!data.nodeField&&!data.nodeParam&&!data.shot&&!data.clip&&!data.subtitle)return;if(!inputCheckpoint){checkpoint();inputCheckpoint=true}if(data.field==='title')P.title=el.value;if(data.field==='script')P.script=el.value;if(data.setting){let numeric=['videoDuration'].includes(data.setting);P.settings[data.setting]=numeric?Math.max(1,Math.min(60,Number(el.value)||5)):el.value;if(data.setting==='videoPrompt')refreshVideoScriptSplit();if(data.setting==='videoMethod'){render();return}if(data.setting==='ratio'){setRatio(el.value);render();return}}if(data.nodeField){let n=node(selected);if(n&&!n.locked){if(n.type==='audio'&&data.nodeField==='prompt'&&el.value.length>AudioNode.MAX_CHARS)el.value=el.value.slice(0,AudioNode.MAX_CHARS);if(n.type==='edit'&&data.nodeField==='prompt'&&el.value.length>EditNode.MAX_CHARS)el.value=el.value.slice(0,EditNode.MAX_CHARS);if(ScriptNode.isScript(n)&&data.nodeField==='prompt'&&el.value.length>ScriptNode.MAX_CHARS)el.value=el.value.slice(0,ScriptNode.MAX_CHARS);n[data.nodeField]=el.value;stampNode(n,data.nodeField);if(n.type==='audio'&&el.closest('#audioDock')&&data.nodeField==='prompt')syncAudioMention(el)}}if(data.nodeParam){let n=node(selected);if(n&&!n.locked){n.params[data.nodeParam]=data.nodeParam==='duration'?Math.max(1,Math.min(60,Number(el.value)||5)):el.value;stampNode(n,data.nodeParam,'param')}}if(data.shot){let s=P.shots.find(s=>s.id===data.shot);if(data.refRole){const list=Array.isArray(s[data.refRole])?s[data.refRole]:[];s[data.refRole]=el.checked?[...new Set([...list,el.value])]:list.filter(v=>v!==el.value)}else if(['duration','startSec','nextGap'].includes(data.key)){const v=Number(el.value);if(Number.isFinite(v)&&el.value!=='')s[data.key]=Math.max(data.key==='duration'?.5:0,Math.min(data.key==='duration'?60:86400,v))}else s[data.key]=el.value;const preview=$('#shotPrompt-'+s.id);if(preview)preview.value=SB.shotData(P,s).prompt}if(data.clip){let c=P.clips.find(c=>c.id===data.clip);if(['duration','trimStart','volume','start','fadeIn','fadeOut'].includes(data.key)){let v=Number(el.value);if(!Number.isFinite(v))return;v=Math.max(data.key==='duration'?.1:0,Math.min(data.key==='volume'?1:600,v));const a=asset(c.assetId);if(a.kind!=='image'&&Number.isFinite(a.duration)){if(data.key==='trimStart')v=Math.min(v,Math.max(0,a.duration-.1));if(data.key==='duration')v=Math.min(v,Math.max(.1,a.duration-c.trimStart))}c[data.key]=v;if(data.key==='trimStart'&&a.duration)c.duration=Math.min(c.duration,Math.max(.1,a.duration-v))}else c[data.key]=el.value}if(data.subtitle){let s=P.subtitles.find(s=>s.id===data.subtitle);if(data.key==='text')s.text=el.value;else{const v=Number(el.value);if(Number.isFinite(v)&&v>=0){s[data.key]=v;if(s.end<=s.start)s.end=s.start+.1}}}const typingField=el.matches('textarea,input[type="text"],input[type="search"],input:not([type])');if(typingField){queueSave('local');scheduleTypedSave()}else queueSave();if(data.setting)refreshVideoTemplatePreview()});
 diff -ruN a/image-node.mjs b/image-node.mjs
 --- a/image-node.mjs
 +++ b/image-node.mjs
-@@ -1,5 +1,5 @@
+@@ -1,5 +1,6 @@
  // 图片节点的面板、预设和出图请求。不直接出图，也不调用付费接口。
 -import {enrichCanvasPrompt, orderRefs, ratioOf as shownRatio} from './shot-stage-still.mjs';
 +import {ratioOf as shownRatio} from './shot-stage-still.mjs';
++import {mapStillResolution, renderStillNodeError, stillResolutionOptions} from './still-refs.mjs';
  const esc = value => String(value ?? "").replace(/[&<>"']/g, c => "&#" + c.charCodeAt(0) + ";");
  
  export const CARD_W = 360;
-@@ -131,11 +131,10 @@
+@@ -107,14 +108,16 @@
+ export function summary(node) {
+   ensure(node);
+   const p = node.params;
+-  return `${p.ratio} · ${p.quality} · ${p.resolution} · ${p.count}张`;
++  const tier = mapStillResolution(p.resolution);
++  return `${p.ratio} · ${p.quality} · ${tier.enabled ? tier.given : tier.label} · ${p.count}张`;
+ }
+ 
+ export function composePrompt(node, upstream = '') {
+   ensure(node);
+   const p = node.params;
+   const lines = [];
+-  lines.push(`画幅 ${p.ratio}，${p.quality}，清晰度 ${p.resolution}，生成 ${p.count} 张，背景${p.background}。`);
++  const tier = mapStillResolution(p.resolution);
++  lines.push(`画幅 ${p.ratio}，${p.quality}，清晰度 ${tier.given}，生成 ${p.count} 张，背景${p.background}。`);
+   if (p.cameraOn) lines.push(`摄像机：${camText(node)}。`);
+   const preset = PRESETS.find(item => item.id === p.preset);
+   if (preset) lines.push(`预设：${preset.name}。${preset.prompt}`);
+@@ -131,11 +134,10 @@
  export function requestBody(node, extra = {}) {
    ensure(node);
    const model = modelOf(node);
@@ -113,7 +210,16 @@ diff -ruN a/image-node.mjs b/image-node.mjs
    return {
      kind: 'image',
      model: model.id,
-@@ -153,7 +152,7 @@
+@@ -144,7 +146,7 @@
+     prompt: full,
+     ratio,
+     quality: node.params.quality,
+-    resolution: node.params.resolution,
++    resolution: mapStillResolution(node.params.resolution).wire,
+     background: node.params.background,
+     count: Number(node.params.count) || 1,
+     camera: node.params.cameraOn ? camText(node) : '',
+@@ -153,7 +155,7 @@
      mode: node.params.mode || '文生图',
      autoLink: !!node.params.autoLink,
      translate: !!node.params.translate,
@@ -122,7 +228,30 @@ diff -ruN a/image-node.mjs b/image-node.mjs
    };
  }
  
-@@ -201,14 +200,14 @@
+@@ -178,17 +180,18 @@
+   if (node.resultAssetId && !ids.includes(node.resultAssetId)) ids.unshift(node.resultAssetId);
+   const index = Math.max(0, Math.min(ids.length - 1, Number(node.params.resultIndex) || 0));
+   const asset = ids.length ? ctx.asset(ids[index]) : null;
++  const alert = renderStillNodeError(node.params?.stillError);
+   if (asset?.kind === 'image' && asset.mediaGap === 'image' && !/^(https?:|blob:|data:image\/|\/api\/)/i.test(asset.src || '')) {
+-    return `<div class="image-stage has-result"><p class="media-gap">原图只在创建者的电脑上，请创建者打开一次以补传</p>${dots}</div>`;
++    return `<div class="image-stage has-result">${alert}<p class="media-gap">原图只在创建者的电脑上，请创建者打开一次以补传</p>${dots}</div>`;
+   }
+   if (asset?.kind === 'image' && asset.src) {
+     const nav = ids.length > 1 ? `<div class="image-switch"><button type="button" data-act="image-result" data-dir="-1" aria-label="上一张">‹</button><span>${index + 1}/${ids.length}</span><button type="button" data-act="image-result" data-dir="1" aria-label="下一张">›</button></div>` : '';
+     const retry = asset.mediaError ? `<button type="button" data-act="media-retry">重试上传</button>` : '';
+-    return `<div class="image-stage has-result">${ctx.mediaHTML(asset)}${nav}${retry}${dots}</div>`;
++    return `<div class="image-stage has-result">${alert}${ctx.mediaHTML(asset)}${nav}${retry}${dots}</div>`;
+   }
+   const ref = (node.assetIds || []).map(id => ctx.asset(id)).find(item => item?.kind === 'image' && item.src);
+-  if (ref) return `<div class="image-stage has-result">${ctx.mediaHTML(ref)}<span class="image-ref-flag">参考</span>${dots}</div>`;
+-  return `<div class="image-stage"><div class="image-ph" aria-hidden="true">△</div><div class="image-try"><small>尝试：</small><button type="button" data-act="image-try" data-mode="图生图">图生图</button><button type="button" data-act="image-try" data-mode="图片高清">图片高清</button></div>${dots}</div>`;
++  if (ref) return `<div class="image-stage has-result">${alert}${ctx.mediaHTML(ref)}<span class="image-ref-flag">参考</span>${dots}</div>`;
++  return `<div class="image-stage">${alert}<div class="image-ph" aria-hidden="true">△</div><div class="image-try"><small>尝试：</small><button type="button" data-act="image-try" data-mode="图生图">图生图</button><button type="button" data-act="image-try" data-mode="图片高清">图片高清</button></div>${dots}</div>`;
+ }
+ 
+ export function card(node, ctx) {
+@@ -201,14 +204,14 @@
    return `<button type="button" data-act="${act}" ${extra}>${label}</button>`;
  }
  
@@ -135,16 +264,31 @@ diff -ruN a/image-node.mjs b/image-node.mjs
    const model = modelOf(node);
    const refN = (node.assetIds || []).length, markN = (p.marks || []).length;
 -  return `<div class="image-dock" id="imageDock" data-node-dock style="position:absolute;z-index:20;width:${CARD_W}px;max-width:${CARD_W}px;min-width:0;left:${Number(node.x) || 0}px;top:${(Number(node.y) || 0) + CARD_H}px"><div class="image-chips">${chip('+ 上传', 'image-upload', busy ? 'disabled' : '')}${chip('画布参考' + (refN ? ' · ' + refN : ''), 'image-ref', busy ? 'disabled' : '')}${chip('标记' + (markN ? ' · ' + markN : ''), 'image-mark', busy ? 'disabled' : '')}${chip('风格', 'image-style', styleOn && !busy ? '' : 'disabled')}<button type="button" class="image-expand" data-act="image-expand" aria-label="展开输入" ${busy ? 'disabled' : ''}>↗</button></div><textarea data-node-field="prompt" aria-label="画面要求" placeholder="可直接文字生图，或上传图片输入文字指令对图片进行编辑，如：将背景改为雪夜" ${busy ? 'disabled' : ''} rows="${p.expanded ? 8 : 3}">${esc(node.prompt)}</textarea><div class="image-bar">${model.connected?`<button type="button" data-act="image-generate" ${busy?'disabled':''}>${esc(model.name)}</button><button type="button" data-act="image-pop" data-pop="model" aria-label="选择模型" ${busy?'disabled':''}>模型</button>`:`<button type="button" data-act="image-pop" data-pop="model">${esc(model.name)} · 未接入</button>`}<button type="button" data-act="image-pop" data-pop="params">${esc(summary(node))}</button><button type="button" data-act="image-pop" data-pop="preset" aria-label="预设" title="预设">预设</button><button type="button" data-act="image-pop" data-pop="camera" aria-label="摄像机" title="摄像机">摄像机</button><button type="button" data-act="image-translate" aria-label="翻译" aria-pressed="${p.translate ? 'true' : 'false'}">译</button><button type="button" data-act="image-pop" data-pop="advanced" aria-label="高级设置" title="高级设置">高级</button><button type="button" class="image-send" data-act="image-generate" aria-label="发送" ${busy ? 'disabled' : ''}>↑</button></div></div>`;
-+  return `<div class="image-dock" id="imageDock" data-node-dock style="position:absolute;z-index:20;width:${CARD_W}px;max-width:${CARD_W}px;min-width:0;left:${Number(node.x) || 0}px;top:${(Number(node.y) || 0) + CARD_H}px"><div class="image-chips">${chip('+ 上传', 'image-upload', busy ? 'disabled' : '')}${chip('画布参考' + (refN ? ' · ' + refN : ''), 'image-ref', busy ? 'disabled' : '')}${chip('标记' + (markN ? ' · ' + markN : ''), 'image-mark', busy ? 'disabled' : '')}${chip('风格', 'image-style', styleOn && !busy ? '' : 'disabled')}<button type="button" class="image-expand" data-act="image-expand" aria-label="展开输入" ${busy ? 'disabled' : ''}>↗</button></div>${extra.stillPreview || ''}<textarea data-node-field="prompt" aria-label="画面要求" placeholder="可直接文字生图，或上传图片输入文字指令对图片进行编辑，如：将背景改为雪夜" ${busy ? 'disabled' : ''} rows="${p.expanded ? 8 : 3}">${esc(node.prompt)}</textarea><div class="image-bar">${model.connected?`<button type="button" data-act="image-generate" ${busy?'disabled':''}>${esc(model.name)}</button><button type="button" data-act="image-pop" data-pop="model" aria-label="选择模型" ${busy?'disabled':''}>模型</button>`:`<button type="button" data-act="image-pop" data-pop="model">${esc(model.name)} · 未接入</button>`}<button type="button" data-act="image-pop" data-pop="params">${esc(summary(node))}</button><button type="button" data-act="image-pop" data-pop="preset" aria-label="预设" title="预设">预设</button><button type="button" data-act="image-pop" data-pop="camera" aria-label="摄像机" title="摄像机">摄像机</button><button type="button" data-act="image-translate" aria-label="翻译" aria-pressed="${p.translate ? 'true' : 'false'}">译</button><button type="button" data-act="image-pop" data-pop="advanced" aria-label="高级设置" title="高级设置">高级</button><button type="button" class="image-send" data-act="image-generate" aria-label="发送" ${busy ? 'disabled' : ''}>↑</button></div></div>`;
++  return `<div class="image-dock" id="imageDock" data-node-dock style="position:absolute;z-index:20;width:${CARD_W}px;max-width:${CARD_W}px;min-width:0;left:${Number(node.x) || 0}px;top:${(Number(node.y) || 0) + CARD_H}px"><div class="image-chips">${chip('+ 上传', 'image-upload', busy ? 'disabled' : '')}${chip('画布参考' + (refN ? ' · ' + refN : ''), 'image-ref', busy ? 'disabled' : '')}${chip('标记' + (markN ? ' · ' + markN : ''), 'image-mark', busy ? 'disabled' : '')}${chip('风格', 'image-style', styleOn && !busy ? '' : 'disabled')}<button type="button" class="image-expand" data-act="image-expand" aria-label="展开输入" ${busy ? 'disabled' : ''}>↗</button></div>${extra.stillPreview || ''}${extra.stillRehearsal || ''}<textarea data-node-field="prompt" aria-label="画面要求" placeholder="可直接文字生图，或上传图片输入文字指令对图片进行编辑，如：将背景改为雪夜" ${busy ? 'disabled' : ''} rows="${p.expanded ? 8 : 3}">${esc(node.prompt)}</textarea><div class="image-bar">${model.connected?`<button type="button" data-act="image-generate" ${busy?'disabled':''}>${esc(model.name)}</button><button type="button" data-act="image-pop" data-pop="model" aria-label="选择模型" ${busy?'disabled':''}>模型</button>`:`<button type="button" data-act="image-pop" data-pop="model">${esc(model.name)} · 未接入</button>`}<button type="button" data-act="image-pop" data-pop="params">${esc(summary(node))}</button><button type="button" data-act="image-pop" data-pop="preset" aria-label="预设" title="预设">预设</button><button type="button" data-act="image-pop" data-pop="camera" aria-label="摄像机" title="摄像机">摄像机</button><button type="button" data-act="image-translate" aria-label="翻译" aria-pressed="${p.translate ? 'true' : 'false'}">译</button><button type="button" data-act="image-pop" data-pop="advanced" aria-label="高级设置" title="高级设置">高级</button><button type="button" data-act="image-still-dry" ${busy ? 'disabled' : ''}>演练（不发送）</button><button type="button" class="image-send" data-act="image-generate" aria-label="发送" ${busy ? 'disabled' : ''}>↑</button></div></div>`;
  }
  
  export function popover(node, pop) {
+@@ -246,7 +249,8 @@
+ function paramMenu(node) {
+   const p = node.params;
+   const row = (title, html) => `<div class="image-param"><span>${title}</span><div>${html}</div></div>`;
+-  return layer('image-pop image-param-pop', 320, `${row('画质', QUALITIES.map(v => choice('image-quality', v, p.quality)).join(''))}${row('清晰度', RESOLUTIONS.map(v => choice('image-resolution', v, p.resolution)).join(''))}${row('背景', BACKGROUNDS.map(v => choice('image-bg', v, p.background)).join(''))}${row('比例', RATIOS.map(v => choice('image-ratio', v, p.ratio)).join(''))}${row('生成数量', COUNTS.map(v => choice('image-count', String(v), String(p.count), v + '张')).join(''))}`);
++  const resolutions = stillResolutionOptions().map(item => item.enabled ? choice('image-resolution', item.value, p.resolution, item.label) : `<button type="button" data-act="image-resolution" data-value="${esc(item.value)}" disabled title="${esc(item.label)}">${esc(item.label)}</button>`).join('');
++  return layer('image-pop image-param-pop', 320, `${row('画质', QUALITIES.map(v => choice('image-quality', v, p.quality)).join(''))}${row('清晰度', resolutions)}${row('背景', BACKGROUNDS.map(v => choice('image-bg', v, p.background)).join(''))}${row('比例', RATIOS.map(v => choice('image-ratio', v, p.ratio)).join(''))}${row('生成数量', COUNTS.map(v => choice('image-count', String(v), String(p.count), v + '张')).join(''))}`);
+ }
+ function presetMenu() {
+   const groups = ['分镜叙事', '空间与机位', '质感调节', '设定图'];
 diff -ruN a/seq-stamp.mjs b/seq-stamp.mjs
 --- a/seq-stamp.mjs
 +++ b/seq-stamp.mjs
-@@ -1,45 +1,20 @@
+@@ -1,45 +1,25 @@
 -/** 只在画面上印编号本身，不写项目名、镜头名或其他字。 */
 +/** Sequence numbers stay in metadata and the UI. Image bytes are never rewritten. */
++
++/** The string a still rehearsal hashes or a request sends. Nothing here redraws pixels. */
++export function sourceImage(dataUrl) {
++  return typeof dataUrl === 'string' ? dataUrl : '';
++}
 +
  export function seqText(label) {
 -  const text = String(label ?? "").trim();
@@ -263,7 +407,7 @@ diff -ruN a/shot-stage-still.mjs b/shot-stage-still.mjs
 diff -ruN a/still-preview.css b/still-preview.css
 --- a/still-preview.css
 +++ b/still-preview.css
-@@ -0,0 +1,22 @@
+@@ -0,0 +1,24 @@
 +.still-demo { margin: 0; background: #111; color: #eee; font: 15px/1.45 sans-serif; }
 +.still-demo main { max-width: 980px; margin: 0 auto; padding: 28px 20px 64px; }
 +.still-demo h1 { font-size: 28px; margin: 0 0 8px; }
@@ -272,6 +416,8 @@ diff -ruN a/still-preview.css b/still-preview.css
 +.still-head h3 { margin: 0; font-size: 18px; }
 +.still-status, .still-note, .still-footnote { color: #bdbdbd; }
 +.still-error { color: #ffb4a8; }
++.still-rehearsal { white-space: pre-wrap; margin: 8px 0; padding: 8px 10px; border-radius: 10px; background: #241f14; color: #f3e6c4; font: 12px/1.45 ui-monospace, monospace; overflow-wrap: anywhere; }
++.image-stage .still-error, .image-dock .still-error { margin: 8px 0; }
 +.still-cols { display: grid; grid-template-columns: 1.4fr .8fr; gap: 16px; align-items: start; }
 +.still-refs { display: flex; gap: 10px; flex-wrap: wrap; }
 +.still-ref, .still-output { position: relative; margin: 0; width: 150px; }
@@ -289,13 +435,13 @@ diff -ruN a/still-preview.css b/still-preview.css
 diff -ruN a/still-refs.mjs b/still-refs.mjs
 --- a/still-refs.mjs
 +++ b/still-refs.mjs
-@@ -0,0 +1,371 @@
+@@ -0,0 +1,588 @@
 +// Plans which still references will actually be sent.
 +// Wire shapes follow this repo's image adapter and the observed canvas call.
 +// Roles stay in the prompt text and the preview. They are not request fields.
-+// This module never fetches. Callers may pass read() for a same-origin asset.
++// This module never calls fetch. readStillRefSource uses the caller's fetchImpl.
 +
-+import {presentSeq, seqText} from './seq-stamp.mjs';
++import {presentSeq, seqText, sourceImage} from './seq-stamp.mjs';
 +
 +/** Verified in deploy/lib/images.mjs. Not taken from a third-party model card. */
 +export const STILL_REF_CONTRACT = Object.freeze({
@@ -305,6 +451,12 @@ diff -ruN a/still-refs.mjs b/still-refs.mjs
 +  imageReferenceKeys: Object.freeze(['id', 'dataUrl']),
 +  stillBodyKeys: Object.freeze(['prompt', 'aspect', 'resolution', 'refs', 'projectId', 'projectName', 'name', 'entityKind', 'shotNo']),
 +});
++
++/**
++ * deploy/lib/images.mjs keeps RESOLUTIONS as ['1k','2k'] and rejects anything else.
++ * This repo has no /api/pianchang-still handler, so the canvas sends only those two.
++ */
++export const STILL_WIRE_RESOLUTIONS = Object.freeze(['1k', '2k']);
 +
 +const DATA_RE = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/]+={0,2})$/;
 +const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -557,7 +709,10 @@ diff -ruN a/still-refs.mjs b/still-refs.mjs
 +  if (typeof options.read !== 'function') throw new StillRefError(reasonText('unread', first.item.name), {code: 'unread', index, name: first.item.name});
 +  let value = '';
 +  try { value = await options.read(ref, index); }
-+  catch (error) { throw new StillRefError(`参考图「${first.item.name}」读取失败：${error?.message || '读不出来'}。没有发送`, {code: 'read-failed', index, name: first.item.name}); }
++  catch (error) {
++    if (error instanceof StillRefError) throw error;
++    throw new StillRefError(`参考图「${first.item.name}」读取失败：${error?.message || '读不出来'}。没有发送`, {code: 'read-failed', index, name: first.item.name});
++  }
 +  const inspected = inspectDataUrl(typeof value === 'string' ? value : '');
 +  if (!inspected.ok) throw new StillRefError(reasonText('bad-read', first.item.name), {code: 'bad-read', index, name: first.item.name});
 +  if (wire === 'images' && libraryIdOf(ref)) {
@@ -584,14 +739,34 @@ diff -ruN a/still-refs.mjs b/still-refs.mjs
 +  return [String(prompt ?? '').trim(), ...notes].filter(Boolean).join('\n');
 +}
 +
++/** Node menu values. 4K stays visible and disabled: the image API has no 4k tier. */
++export function mapStillResolution(value) {
++  const key = String(value ?? '').trim().toLowerCase();
++  if (key === '1k') return {wire: '1k', requested: '1K', given: '1K', enabled: true, label: '1K'};
++  if (key === '2k') return {wire: '2k', requested: '2K', given: '2K', enabled: true, label: '2K'};
++  if (key === '4k') return {wire: '2k', requested: '4K', given: '2K', enabled: false, label: '4K（实际按 2K 出图）'};
++  return {wire: '1k', requested: String(value ?? '').trim(), given: '1K', enabled: !String(value ?? '').trim(), label: '1K'};
++}
++
++export function stillResolutionOptions() {
++  return [
++    {value: '1K', label: '1K', enabled: true},
++    {value: '2K', label: '2K', enabled: true},
++    {value: '4K', label: mapStillResolution('4K').label, enabled: false},
++  ];
++}
++
 +/** Body fields already sent by the live canvas. No role, seed, or extra key. */
-+export function stillRequestBody({prompt, ratio, plan, meta} = {}) {
++export function stillRequestBody({prompt, ratio, plan, meta, resolution} = {}) {
 +  if (!plan?.ok || plan.wire !== 'still' || !Array.isArray(plan.stillRefs)) throw new StillRefError('参考图还不能发送', {code: 'body'});
 +  const extra = meta && typeof meta === 'object' ? meta : {};
++  const requested = resolution !== undefined ? resolution : extra.resolution;
++  const mapped = mapStillResolution(requested);
++  if (!STILL_WIRE_RESOLUTIONS.includes(mapped.wire)) throw new StillRefError('清晰度无法发送', {code: 'resolution'});
 +  const body = {
 +    prompt: typeof prompt === 'string' ? prompt : '',
 +    aspect: ratio || '16:9',
-+    resolution: '1k',
++    resolution: mapped.wire,
 +    refs: plan.stillRefs.slice(),
 +    projectId: extra.projectId || '',
 +    projectName: extra.projectName || '',
@@ -603,6 +778,194 @@ diff -ruN a/still-refs.mjs b/still-refs.mjs
 +    if (!STILL_REF_CONTRACT.stillBodyKeys.includes(key)) delete body[key];
 +  }
 +  return body;
++}
++
++function refId(ref) {
++  const row = asRecord(ref);
++  return row && typeof row.id === 'string' ? row.id : '';
++}
++
++/** Own images first, then each incoming edge's images, capped at the still limit. */
++export function assembleStillRefs({own = [], edges = [], limit = STILL_REF_CONTRACT.referenceLimit} = {}) {
++  const cap = Number.isInteger(limit) && limit > 0 ? limit : STILL_REF_CONTRACT.referenceLimit;
++  const refs = [];
++  const omitted = [];
++  const seen = new Set();
++  const consider = (ref) => {
++    if (asRecord(ref) == null) return;
++    const id = refId(ref);
++    if (id && seen.has(id)) return;
++    if (refs.length >= cap) {
++      omitted.push(labelOf(ref, refs.length + omitted.length));
++      if (id) seen.add(id);
++      return;
++    }
++    if (id) seen.add(id);
++    refs.push(ref);
++  };
++  const groups = [
++    Array.isArray(own) ? own : [],
++    ...(Array.isArray(edges) ? edges : []).map(edge => Array.isArray(edge) ? edge : (Array.isArray(edge?.images) ? edge.images : [])),
++  ];
++  for (const group of groups) for (const ref of group) consider(ref);
++  return {refs, omitted, limit: cap};
++}
++
++function imagesOnUpstream(node, lookup) {
++  if (!node) return [];
++  const out = [];
++  const seen = new Set();
++  const push = (id) => {
++    if (!id || seen.has(id)) return;
++    const asset = lookup(id);
++    if (!asset || asset.kind !== 'image') return;
++    seen.add(id);
++    out.push(asset);
++  };
++  push(node.resultAssetId);
++  for (const id of node.assetIds || []) push(id);
++  return out;
++}
++
++/**
++ * node.assetIds images first (not the node's own result).
++ * Then each incoming edge, in edge-list order: upstream result, then that node's image assets.
++ */
++export function collectStillRefs({node, edges, lookup, limit = STILL_REF_CONTRACT.referenceLimit} = {}) {
++  const find = typeof lookup === 'function' ? lookup : () => null;
++  const own = [];
++  const seen = new Set();
++  for (const id of node?.assetIds || []) {
++    if (!id || seen.has(id)) continue;
++    const asset = find(id);
++    if (!asset || asset.kind !== 'image') continue;
++    seen.add(id);
++    own.push(asset);
++  }
++  const groups = (Array.isArray(edges) ? edges : []).map(edge => imagesOnUpstream(edge?.from ?? edge, find));
++  return assembleStillRefs({own, edges: groups, limit});
++}
++
++/** Which non-data sources may be read with the page's own fetch. Others are refused. */
++export function stillRefFetchTarget(src, origin) {
++  const value = typeof src === 'string' ? src : '';
++  if (!value || value.startsWith('data:')) return {ok: false, reason: value.startsWith('data:') ? 'data' : 'empty'};
++  if (value.startsWith('blob:')) return {ok: true, url: value, kind: 'blob'};
++  if (value.startsWith('/') && !value.startsWith('//') && !value.startsWith('/\\')) {
++    const path = value.split('?')[0];
++    let params;
++    try { params = new URLSearchParams(value.includes('?') ? value.slice(value.indexOf('?') + 1) : ''); }
++    catch { params = new URLSearchParams(); }
++    if (path === '/api/collaboration' && params.get('action') === 'media') return {ok: true, url: value, kind: 'collaboration'};
++    if (path === '/api/images' || path.startsWith('/api/images/')) return {ok: true, url: value, kind: 'images'};
++    return {ok: false, reason: 'remote'};
++  }
++  let url;
++  try { url = new URL(value); } catch { return {ok: false, reason: 'remote'}; }
++  if (url.username || url.password || (url.protocol !== 'https:' && url.protocol !== 'http:')) return {ok: false, reason: 'remote'};
++  if (typeof origin !== 'string' || !origin) return {ok: false, reason: 'remote'};
++  let allowed;
++  try { allowed = new URL(origin); } catch { return {ok: false, reason: 'remote'}; }
++  if ((allowed.protocol !== 'https:' && allowed.protocol !== 'http:') || allowed.origin !== url.origin) return {ok: false, reason: 'remote'};
++  return {ok: true, url: url.href, kind: 'same-origin'};
++}
++
++async function dataUrlFromBlob(blob, name) {
++  const mime = String(blob?.type || '').split(';')[0].trim().toLowerCase();
++  if (mime && !/^image\/(png|jpeg|webp)$/.test(mime)) throw new StillRefError(reasonText('unsupported-image', name), {code: 'unsupported-image', name});
++  const buf = new Uint8Array(await blob.arrayBuffer());
++  if (!buf.byteLength) throw new StillRefError(reasonText('bad-read', name), {code: 'bad-read', name});
++  let binary = '';
++  const step = 0x8000;
++  for (let i = 0; i < buf.length; i += step) binary += String.fromCharCode(...buf.subarray(i, i + step));
++  return `data:${mime || 'image/png'};base64,${btoa(binary)}`;
++}
++
++/** Turn a same-origin or blob ref into a data URL. Throws instead of returning an empty src. */
++export async function readStillRefSource(src, {origin, fetchImpl, readLocal, name = '参考图'} = {}) {
++  const value = typeof src === 'string' ? src : (typeof src?.src === 'string' ? src.src : '');
++  const label = clean(name, 120) || '参考图';
++  if (value.startsWith('data:')) return value;
++  if (typeof readLocal === 'function') {
++    try {
++      const local = String(await readLocal() || '');
++      if (local.startsWith('data:')) return local;
++    } catch (error) {
++      throw new StillRefError(`参考图「${label}」读取失败：${error?.message || '读不出来'}。没有发送`, {code: 'read-failed', name: label});
++    }
++  }
++  const target = stillRefFetchTarget(value, origin);
++  if (!target.ok) throw new StillRefError(reasonText(target.reason === 'empty' ? 'empty' : 'remote', label), {code: target.reason === 'empty' ? 'empty' : 'remote', name: label});
++  if (typeof fetchImpl !== 'function') throw new StillRefError(reasonText('unread', label), {code: 'unread', name: label});
++  let res;
++  try { res = await fetchImpl(target.url, {credentials: 'same-origin'}); }
++  catch (error) { throw new StillRefError(`参考图「${label}」读取失败：${error?.message || '读不出来'}。没有发送`, {code: 'read-failed', name: label}); }
++  if (!res?.ok) throw new StillRefError(`参考图「${label}」读取失败（${res?.status || '失败'}）。没有发送`, {code: 'read-failed', name: label, status: res?.status || 0});
++  if (typeof res.blob !== 'function') throw new StillRefError(reasonText('bad-read', label), {code: 'bad-read', name: label});
++  return dataUrlFromBlob(await res.blob(), label);
++}
++
++export async function digestStillRef(dataUrl) {
++  const raw = sourceImage(dataUrl);
++  const inspected = inspectDataUrl(raw);
++  if (!inspected.ok) throw new StillRefError(reasonText(inspected.reason === 'not-data-url' ? 'bad-read' : inspected.reason, '参考图'), {code: inspected.reason || 'bad-read'});
++  const payload = raw.slice(raw.indexOf(',') + 1);
++  const bin = atob(payload);
++  const bytes = new Uint8Array(bin.length);
++  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
++  const subtle = globalThis.crypto?.subtle;
++  if (!subtle?.digest) throw new StillRefError('这个环境算不出参考图摘要，没有发送', {code: 'digest'});
++  const digest = new Uint8Array(await subtle.digest('SHA-256', bytes));
++  let hex = '';
++  for (const byte of digest) hex += byte.toString(16).padStart(2, '0');
++  return {format: inspected.mime, bytes: inspected.bytes, sha256: hex.slice(0, 12)};
++}
++
++/** Assembles the still body and a text-only summary. Does not post it. */
++export async function rehearseStillRequest({prompt, ratio, plan, meta, resolution, omitted = []} = {}) {
++  const body = stillRequestBody({prompt, ratio, plan, meta, resolution});
++  const order = [];
++  for (let index = 0; index < body.refs.length; index++) {
++    const row = await digestStillRef(body.refs[index]);
++    order.push({i: index + 1, format: row.format, bytes: row.bytes, sha256: row.sha256});
++  }
++  const summary = {
++    count: order.length,
++    order,
++    resolution: body.resolution,
++    omitted: (Array.isArray(omitted) ? omitted : []).map(name => clean(name, 120)).filter(Boolean),
++    sent: false,
++  };
++  if (JSON.stringify(summary).includes('data:')) throw new StillRefError('演练结果不能带图片数据', {code: 'rehearse'});
++  return summary;
++}
++
++export function renderStillNodeError(message) {
++  const text = clean(message, 400);
++  if (!text) return '';
++  return `<p class="still-error" role="alert" data-still-node-error>${esc(text)}</p>`;
++}
++
++export function renderStillRehearsal(summary) {
++  if (!summary || typeof summary !== 'object' || summary.sent !== false) return '';
++  const order = (Array.isArray(summary.order) ? summary.order : []).map(row => ({
++    i: Number(row?.i) || 0,
++    format: clean(row?.format, 40),
++    bytes: Number(row?.bytes) || 0,
++    sha256: clean(row?.sha256, 12),
++  }));
++  if (order.some(row => !/^[0-9a-f]{12}$/.test(row.sha256) || !/^image\/(?:png|jpeg|webp)$/.test(row.format))) return '';
++  const omitted = (Array.isArray(summary.omitted) ? summary.omitted : []).map(name => clean(name, 120)).filter(name => name && !String(name).includes('data:'));
++  const lines = [
++    '演练（未发送）',
++    `参考 ${Number(summary.count) || 0} 张`,
++    `分辨率 ${clean(summary.resolution, 16)}`,
++    ...order.map(row => `${row.i}. ${row.format} · ${row.bytes} 字节 · sha256 ${row.sha256}`),
++  ];
++  if (omitted.length) lines.push(`未纳入：${omitted.join('、')}`);
++  const text = lines.join('\n');
++  if (/data:/i.test(text)) return '';
++  return `<pre class="still-rehearsal" data-still-rehearsal>${esc(text)}</pre>`;
 +}
 +
 +export function createStillRun() {
