@@ -1,0 +1,663 @@
+diff -ruN a/app.mjs b/app.mjs
+--- a/app.mjs
++++ b/app.mjs
+@@ -34,7 +34,7 @@
+ import * as ScriptWorkbench from './script-workbench.mjs';
+ import {createImageWorkshop,imageRequest,rememberImage,galleryBlobUrl,galleryDataUrl,imageContentUrl,catalogImages,mergeGalleryItems} from './image-workshop.mjs';
+ import {catalogGenerated,catalogUrl} from './asset-catalog.mjs';
+-import {stampSeq} from './seq-stamp.mjs';
++import {appendRefPrompt, classifyStillReferences, planStillReferences, presentSeq, renderStillCompare, stillRequestBody} from './still-refs.mjs';
+ import {createPianchangDesk} from './pianchang-desk.mjs';
+ import {releaseHeavyStills, backfillEmptySlots, ensureDesk} from './pianchang-core.mjs';
+ import {packForCloud} from './project-pack.mjs';
+@@ -515,6 +515,16 @@
+  placeScriptFloats();placeEditFloats();
+  }finally{panelFitLock=0}
+ }
++function stillPreviewFor(n){
++ const references=imageRefs(n).map(a=>n.params?.stageFrameId&&a.id===n.params.stageFrameId?{...a,role:'stage_frame'}:a);
++ const plan=classifyStillReferences(references,{wire:'still',limit:3,origin:location.origin});
++ const task=(P.tasks||[]).find(t=>t.data?.nodeId===n.id);
++ const result=asset(n.resultAssetId);
++ const failed=task?.status==='failed';
++ const src=typeof result?.src==='string'?result.src:'';
++ const run={status:n.params?.phase==='running'?'running':failed?'failed':src?'done':'idle',output:src,held:src,error:failed?(task.error||'出图失败'):'',seqLabel:result?.metadata?.seqLabel||'',attempt:Number(n.params?.attempt)||0};
++ return renderStillCompare({plan,run,title:'这一镜要发送的参考',retryAct:'image-generate'});
++}
+ function paintImageChrome(){
+  if(!imagePhaseReady&&P){imagePhaseReady=true;for(const n of P.nodes)if(n?.params?.phase==='running')n.params.phase=''}
+  document.querySelectorAll('#imageDock,#imageTools,#imageBanner,#imagePop').forEach(el=>el.remove());
+@@ -522,7 +532,7 @@
+  if(imagePick)board.insertAdjacentHTML('beforeend',ImageNode.banner(imagePick.mode));
+  const n=node(selected);if(!n||n.type!=='image')return;
+  ImageNode.ensure(n);
+- world.insertAdjacentHTML('beforeend',ImageNode.dock(n));
++ world.insertAdjacentHTML('beforeend',ImageNode.dock(n,{stillPreview:stillPreviewFor(n)}));
+  const results=n.params.results||[];
+  if(n.params.phase!=='running'&&(n.resultAssetId||results.length))world.insertAdjacentHTML('beforeend',ImageNode.tools(n));
+  const html=imagePop?ImageNode.popover(n,imagePop):'';
+@@ -901,12 +911,15 @@
+ async function siteStill(prompt, ratio, refs, meta){
+  const extra=meta&&typeof meta==='object'?meta:{};
+  const cap=extra.refCap===4?4:3;
+- const posted=await fetch('/api/pianchang-still',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json',...memberHeaders()},body:JSON.stringify({prompt,aspect:ratio||'16:9',resolution:'1k',refs:(refs||[]).filter(src=>String(src).startsWith('data:')).slice(0,cap),projectId:extra.projectId||'',projectName:extra.projectName||'',name:extra.name||'',entityKind:extra.entityKind||'',shotNo:extra.shotNo||''})});
++ const list=Array.isArray(refs)?refs:[];
++ const planned=await planStillReferences(list,{wire:'still',limit:cap,origin:location.origin,ratio:ratio||'16:9',read:extra.read||(ref=>stillDataUrl(typeof ref==='string'?ref:(ref?.src||''),{readLocal:()=>!ref||typeof ref==='string'?'':(galleryDataUrl(ref.imageLibraryId||ref.id)||galleryDataUrl(ref.id)||''),fetch:url=>fetch(url,{credentials:'same-origin'})}))});
++ const named=list.some(ref=>ref&&typeof ref==='object');
++ const posted=await fetch('/api/pianchang-still',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json',...memberHeaders()},body:JSON.stringify(stillRequestBody({prompt:named?appendRefPrompt(prompt,planned):prompt,ratio,plan:planned,meta:extra}))});
+  const data=await posted.json().catch(()=>({}));
+  if(!posted.ok||!data.dataUrl)throw Error(data.error||'出图失败');
+- const label=String(data.seqLabel||'');
+- if(!label)return data.dataUrl;
+- try{return await stampSeq(data.dataUrl,label)}catch{return data.dataUrl}
++ const shown=presentSeq(data.dataUrl,data.seqLabel);
++ extra.seqLabel=shown.seqLabel;
++ return shown.dataUrl;
+ }
+ async function siteClip(prompt, ratio, duration, images, onProgress){
+  const usable=(images||[]).map(mediaSrc).filter(Boolean);
+@@ -954,7 +967,7 @@
+   try{src=await siteClip(base.prompt,base.ratio,base.duration,clipImages,pct=>{if(videoJob!==token||!n.params)return;if(typeof pct==='number')noteRealProgress(n,pct)})}
+   catch(err){if(videoJob===token){videoJob=null;finishJobProgress(n,false);trackNodeTask('视频',n,'failed',{error:err.message||'出视频失败'});discard();drawCanvas()}return toast(err.message||'出视频失败')}
+   if(videoJob!==token){finishJobProgress(n,false);discard();drawCanvas();return}
+-  const made={id:C.uid(),name:(n.name||'视频')+' · 成片 '+(i+1),kind:'video',type:'视频',src,created:Date.now(),locked:false,tags:'',description:n.prompt||'',metadata:{from:'canvas',projectId:P.id,projectName:P.title||'',nodeId:n.id,nodeName:n.name||''}};
++  const made={id:C.uid(),name:(n.name||'视频')+' · 成片 '+(i+1),kind:'video',type:'视频',src,created:Date.now(),locked:false,tags:'',description:n.prompt||'',metadata:{from:'canvas',projectId:P.id,projectName:P.title||'',nodeId:n.id,nodeName:n.name||'',seqLabel:meta.seqLabel||''}};
+   token.born.push(made.id);ids.push(made.id);
+   commitGenerated(n.id,made);
+   rememberCatalog(made,n);
+@@ -994,8 +1007,8 @@
+   }catch{}
+  })();
+ }
+-function imageRefs(n){const ids=[...(n.assetIds||[])];return ids.map(id=>asset(id)).filter(a=>a&&a.kind==='image').slice(0,3)}
+-function pinShotStage(img,shot){const src=(Array.isArray(shot?.stageRefs)?shot.stageRefs:[]).find(item=>item?.role==='stage_frame'&&String(item.src||'').startsWith('data:image/'))?.src;if(!img?.params)return;if(!img.params.ratioSet&&ImageNode.RATIOS.includes(defaultAspect(P)))img.params.ratio=defaultAspect(P);if(!src)return;const made={id:C.uid(),name:'这一镜白模',kind:'image',type:'分镜',src,created:Date.now(),locked:false,tags:'',description:'这一镜白模机位'};P.assets.push(made);img.assetIds=[made.id,...(img.assetIds||[]).filter(id=>id!==made.id)].slice(0,3);img.params.stageFrameId=made.id}
++function imageRefs(n){const ids=[...(n.assetIds||[])];return ids.map(id=>asset(id)).filter(a=>a&&a.kind==='image')}
++function pinShotStage(img,shot){const src=(Array.isArray(shot?.stageRefs)?shot.stageRefs:[]).find(item=>item?.role==='stage_frame'&&String(item.src||'').startsWith('data:image/'))?.src;if(!img?.params)return;if(!img.params.ratioSet&&ImageNode.RATIOS.includes(defaultAspect(P)))img.params.ratio=defaultAspect(P);if(!src)return;const made={id:C.uid(),name:'这一镜白模',kind:'image',type:'分镜',src,created:Date.now(),locked:false,tags:'',description:'这一镜白模机位'};P.assets.push(made);img.assetIds=[made.id,...(img.assetIds||[]).filter(id=>id!==made.id)];img.params.stageFrameId=made.id}
+ function imageUpstream(n){if(!n?.params?.autoLink)return '';try{const d=C.inputs(P,n.id);return d.nodes.filter(id=>id!==n.id).map(id=>node(id)?.prompt||'').filter(Boolean).join('\n')}catch{return ''}}
+ let galleryCache=[];
+ async function refreshGalleryCache(){try{galleryCache=await catalogImages()}catch{galleryCache=galleryCache||[]}}
+@@ -1032,10 +1045,11 @@
+  imageJob=token;imagePop='';
+  n.params.phase='running';beginJobProgress(n,'图片');trackNodeTask('图片',n,'running',{},true);queueSave('generate');drawCanvas();suppressCollab++;latched=true;
+  const ids=[];
++ const meta=stillMeta(n);
+  for(let i=0;i<count;i++){
+   if(imageJob!==token){finishJobProgress(n,false);discard();drawCanvas();return}
+   let src;
+-  try{const ordered=(base.references||[]).map(r=>r.src).filter(s=>String(s).startsWith('data:'));src=await siteStill(base.prompt,base.ratio,ordered.length?ordered:imageRefs(n).map(a=>a.src),stillMeta(n))}
++  try{src=await siteStill(base.prompt,base.ratio,references,meta)}
+   catch(err){if(imageJob===token){imageJob=null;finishJobProgress(n,false);trackNodeTask('图片',n,'failed',{error:err.message||'出图失败'});discard();drawCanvas()}return toast(err.message||'出图失败')}
+   if(imageJob!==token){finishJobProgress(n,false);discard();drawCanvas();return}
+   const role=n.params.assetRole||'分镜';
+diff -ruN a/image-node.mjs b/image-node.mjs
+--- a/image-node.mjs
++++ b/image-node.mjs
+@@ -1,5 +1,5 @@
+ // 图片节点的面板、预设和出图请求。不直接出图，也不调用付费接口。
+-import {enrichCanvasPrompt, orderRefs, ratioOf as shownRatio} from './shot-stage-still.mjs';
++import {ratioOf as shownRatio} from './shot-stage-still.mjs';
+ const esc = value => String(value ?? "").replace(/[&<>"']/g, c => "&#" + c.charCodeAt(0) + ";");
+ 
+ export const CARD_W = 360;
+@@ -131,11 +131,10 @@
+ export function requestBody(node, extra = {}) {
+   ensure(node);
+   const model = modelOf(node);
+-  const refs = orderRefs(Array.isArray(extra.references) ? extra.references : []);
++  const refs = (Array.isArray(extra.references) ? extra.references : []).filter(Boolean);
+   const ratio = extra.project ? shownRatio(node, extra.project, RATIOS) : node.params.ratio;
+   const prompt = composePrompt({...node, params: {...node.params, ratio}}, extra.upstream || '');
+-  const withRefs = refs.length ? `${prompt}\n参考图：${refs.map(r => r.name || r.id).join('、')}。` : prompt;
+-  const full = extra.project ? enrichCanvasPrompt(withRefs, refs, extra.project, ratio) : withRefs;
++  const full = prompt;
+   return {
+     kind: 'image',
+     model: model.id,
+@@ -153,7 +152,7 @@
+     mode: node.params.mode || '文生图',
+     autoLink: !!node.params.autoLink,
+     translate: !!node.params.translate,
+-    references: refs.map(r => ({ id: r.id, name: r.name || '', role: r.role || '', src: typeof r.src === 'string' && r.src.startsWith('data:') ? r.src : '' }))
++    references: refs.map(r => ({ id: r.id || '', name: r.name || '', role: r.role || '', src: typeof r.src === 'string' ? r.src : '' }))
+   };
+ }
+ 
+@@ -201,14 +200,14 @@
+   return `<button type="button" data-act="${act}" ${extra}>${label}</button>`;
+ }
+ 
+-export function dock(node) {
++export function dock(node, extra = {}) {
+   ensure(node);
+   const p = node.params;
+   const busy = p.phase === 'running';
+   const styleOn = supportsStyle(node);
+   const model = modelOf(node);
+   const refN = (node.assetIds || []).length, markN = (p.marks || []).length;
+-  return `<div class="image-dock" id="imageDock" data-node-dock style="position:absolute;z-index:20;width:${CARD_W}px;max-width:${CARD_W}px;min-width:0;left:${Number(node.x) || 0}px;top:${(Number(node.y) || 0) + CARD_H}px"><div class="image-chips">${chip('+ 上传', 'image-upload', busy ? 'disabled' : '')}${chip('画布参考' + (refN ? ' · ' + refN : ''), 'image-ref', busy ? 'disabled' : '')}${chip('标记' + (markN ? ' · ' + markN : ''), 'image-mark', busy ? 'disabled' : '')}${chip('风格', 'image-style', styleOn && !busy ? '' : 'disabled')}<button type="button" class="image-expand" data-act="image-expand" aria-label="展开输入" ${busy ? 'disabled' : ''}>↗</button></div><textarea data-node-field="prompt" aria-label="画面要求" placeholder="可直接文字生图，或上传图片输入文字指令对图片进行编辑，如：将背景改为雪夜" ${busy ? 'disabled' : ''} rows="${p.expanded ? 8 : 3}">${esc(node.prompt)}</textarea><div class="image-bar">${model.connected?`<button type="button" data-act="image-generate" ${busy?'disabled':''}>${esc(model.name)}</button><button type="button" data-act="image-pop" data-pop="model" aria-label="选择模型" ${busy?'disabled':''}>模型</button>`:`<button type="button" data-act="image-pop" data-pop="model">${esc(model.name)} · 未接入</button>`}<button type="button" data-act="image-pop" data-pop="params">${esc(summary(node))}</button><button type="button" data-act="image-pop" data-pop="preset" aria-label="预设" title="预设">预设</button><button type="button" data-act="image-pop" data-pop="camera" aria-label="摄像机" title="摄像机">摄像机</button><button type="button" data-act="image-translate" aria-label="翻译" aria-pressed="${p.translate ? 'true' : 'false'}">译</button><button type="button" data-act="image-pop" data-pop="advanced" aria-label="高级设置" title="高级设置">高级</button><button type="button" class="image-send" data-act="image-generate" aria-label="发送" ${busy ? 'disabled' : ''}>↑</button></div></div>`;
++  return `<div class="image-dock" id="imageDock" data-node-dock style="position:absolute;z-index:20;width:${CARD_W}px;max-width:${CARD_W}px;min-width:0;left:${Number(node.x) || 0}px;top:${(Number(node.y) || 0) + CARD_H}px"><div class="image-chips">${chip('+ 上传', 'image-upload', busy ? 'disabled' : '')}${chip('画布参考' + (refN ? ' · ' + refN : ''), 'image-ref', busy ? 'disabled' : '')}${chip('标记' + (markN ? ' · ' + markN : ''), 'image-mark', busy ? 'disabled' : '')}${chip('风格', 'image-style', styleOn && !busy ? '' : 'disabled')}<button type="button" class="image-expand" data-act="image-expand" aria-label="展开输入" ${busy ? 'disabled' : ''}>↗</button></div>${extra.stillPreview || ''}<textarea data-node-field="prompt" aria-label="画面要求" placeholder="可直接文字生图，或上传图片输入文字指令对图片进行编辑，如：将背景改为雪夜" ${busy ? 'disabled' : ''} rows="${p.expanded ? 8 : 3}">${esc(node.prompt)}</textarea><div class="image-bar">${model.connected?`<button type="button" data-act="image-generate" ${busy?'disabled':''}>${esc(model.name)}</button><button type="button" data-act="image-pop" data-pop="model" aria-label="选择模型" ${busy?'disabled':''}>模型</button>`:`<button type="button" data-act="image-pop" data-pop="model">${esc(model.name)} · 未接入</button>`}<button type="button" data-act="image-pop" data-pop="params">${esc(summary(node))}</button><button type="button" data-act="image-pop" data-pop="preset" aria-label="预设" title="预设">预设</button><button type="button" data-act="image-pop" data-pop="camera" aria-label="摄像机" title="摄像机">摄像机</button><button type="button" data-act="image-translate" aria-label="翻译" aria-pressed="${p.translate ? 'true' : 'false'}">译</button><button type="button" data-act="image-pop" data-pop="advanced" aria-label="高级设置" title="高级设置">高级</button><button type="button" class="image-send" data-act="image-generate" aria-label="发送" ${busy ? 'disabled' : ''}>↑</button></div></div>`;
+ }
+ 
+ export function popover(node, pop) {
+diff -ruN a/seq-stamp.mjs b/seq-stamp.mjs
+--- a/seq-stamp.mjs
++++ b/seq-stamp.mjs
+@@ -1,45 +1,20 @@
+-/** 只在画面上印编号本身，不写项目名、镜头名或其他字。 */
++/** Sequence numbers stay in metadata and the UI. Image bytes are never rewritten. */
++
+ export function seqText(label) {
+-  const text = String(label ?? "").trim();
+-  if (!/^(\d{1,3}|[A-Za-z]\d{0,3})$/.test(text)) return "";
++  const text = String(label ?? '').trim();
++  if (!/^(\d{1,3}|[A-Za-z]\d{0,3})$/.test(text)) return '';
+   return /[A-Za-z]/.test(text) ? text.toUpperCase() : text;
+ }
+ 
++/** Drop-in for the preview import. Returns the same string it was given. */
+ export async function stampSeq(dataUrl, label) {
+-  const text = seqText(label);
+-  if (!text || typeof dataUrl !== "string" || !dataUrl.startsWith("data:image/")) return dataUrl;
+-  const img = await new Promise((resolve, reject) => {
+-    const el = new Image();
+-    el.onload = () => resolve(el);
+-    el.onerror = () => reject(Error("图片无法印编号"));
+-    el.src = dataUrl;
+-  });
+-  const w = img.naturalWidth || img.width;
+-  const h = img.naturalHeight || img.height;
+-  if (!w || !h) return dataUrl;
+-  const canvas = document.createElement("canvas");
+-  canvas.width = w;
+-  canvas.height = h;
+-  const ctx = canvas.getContext("2d");
+-  if (!ctx) return dataUrl;
+-  ctx.drawImage(img, 0, 0, w, h);
+-  const size = Math.max(22, Math.round(Math.min(w, h) * 0.055));
+-  ctx.font = `700 ${size}px sans-serif`;
+-  ctx.textAlign = "left";
+-  ctx.textBaseline = "top";
+-  ctx.lineJoin = "round";
+-  ctx.miterLimit = 2;
+-  ctx.lineWidth = Math.max(4, Math.round(size * 0.18));
+-  ctx.strokeStyle = "#000";
+-  ctx.fillStyle = "#fff";
+-  const x = Math.round(size * 0.35);
+-  const y = Math.round(size * 0.28);
+-  ctx.strokeText(text, x, y);
+-  ctx.fillText(text, x, y);
+-  const png = /^data:image\/png/i.test(dataUrl);
+-  try {
+-    return png ? canvas.toDataURL("image/png") : canvas.toDataURL("image/jpeg", 0.92);
+-  } catch {
+-    return canvas.toDataURL("image/png");
+-  }
++  void label;
++  return typeof dataUrl === 'string' ? dataUrl : '';
++}
++
++export function presentSeq(dataUrl, label) {
++  return {
++    dataUrl: typeof dataUrl === 'string' ? dataUrl : '',
++    seqLabel: seqText(label),
++  };
+ }
+diff -ruN a/shot-stage-still.mjs b/shot-stage-still.mjs
+--- a/shot-stage-still.mjs
++++ b/shot-stage-still.mjs
+@@ -37,7 +37,7 @@
+ 
+ export function placeStageFrame(refs, src) {
+   const rest = (Array.isArray(refs) ? refs : []).filter(item => item && item.role !== 'stage_frame');
+-  return [{role: 'stage_frame', src, name: '这一镜白模'}, ...rest].slice(0, 3);
++  return [{role: 'stage_frame', src, name: '这一镜白模'}, ...rest];
+ }
+ 
+ function kindOf(asset) {
+@@ -49,12 +49,7 @@
+ }
+ 
+ export function orderRefs(refs) {
+-  const list = Array.isArray(refs) ? refs.filter(Boolean) : [];
+-  const stage = list.filter(item => item.role === 'stage_frame');
+-  const rest = list.filter(item => item.role !== 'stage_frame');
+-  const rank = {character: 0, location: 1, prop: 2, other: 3};
+-  const sorted = rest.map((item, index) => ({item, index})).sort((a, b) => rank[kindOf(a.item)] - rank[kindOf(b.item)] || a.index - b.index).map(row => row.item);
+-  return [...stage, ...sorted].slice(0, 3);
++  return (Array.isArray(refs) ? refs : []).filter(Boolean);
+ }
+ 
+ function locationLock(name) {
+@@ -75,14 +70,15 @@
+ export function enrichCanvasPrompt(prompt, refs, project, ratio) {
+   const ordered = orderRefs(refs);
+   const lines = [String(prompt || '').trim()];
+-  for (const asset of ordered) {
++  const at = (line, index) => String(line).replaceAll('<IMAGE_0>', `<IMAGE_${index}>`).replaceAll('IMAGE_0', `IMAGE_${index}`);
++  ordered.forEach((asset, index) => {
+     const kind = kindOf(asset);
+     if (kind === 'character') {
+       const row = (project?.pianchang?.characters || []).find(item => item.name === asset.name) || {};
+       const look = asset.appearance || row.appearance || asset.description || '';
+       const costume = asset.costume || row.costume || '';
+       lines.push([look && `外貌：${look}`, `wardrobe: ${costume}`].filter(Boolean).join(' '));
+-      lines.push(MATCH_LINE);
++      lines.push(at(MATCH_LINE, index));
+     } else if (kind === 'prop') {
+       const row = (project?.pianchang?.props || []).find(item => item.name === asset.name) || {};
+       const material = asset.material || row.material || '';
+@@ -93,10 +89,11 @@
+       const lock = locationLock(asset.name);
+       if (lock) lines.push(lock);
+     }
+-  }
++  });
+   const many = useRefsLine(ordered.length);
+   if (many) lines.push(many);
+-  if (ordered.some(item => item.role === 'stage_frame')) lines.push(FUSE_LINE, PHOTO_LINE, STAGE_LINE);
++  const stageAt = ordered.findIndex(item => item.role === 'stage_frame');
++  if (stageAt >= 0) lines.push(at(FUSE_LINE, stageAt), PHOTO_LINE, at(STAGE_LINE, stageAt));
+   const note = aspectFrameNote(ratio);
+   if (note) lines.push(note);
+   return lines.filter(Boolean).join('\n');
+diff -ruN a/still-preview.css b/still-preview.css
+--- a/still-preview.css
++++ b/still-preview.css
+@@ -0,0 +1,22 @@
++.still-demo { margin: 0; background: #111; color: #eee; font: 15px/1.45 sans-serif; }
++.still-demo main { max-width: 980px; margin: 0 auto; padding: 28px 20px 64px; }
++.still-demo h1 { font-size: 28px; margin: 0 0 8px; }
++.still-demo .banner { background: #2a2416; border: 1px solid #6d5a2a; border-radius: 12px; padding: 12px 14px; }
++.still-compare { margin: 22px 0; padding: 16px; border: 1px solid #333; border-radius: 16px; background: #1c1c1c; }
++.still-head h3 { margin: 0; font-size: 18px; }
++.still-status, .still-note, .still-footnote { color: #bdbdbd; }
++.still-error { color: #ffb4a8; }
++.still-cols { display: grid; grid-template-columns: 1.4fr .8fr; gap: 16px; align-items: start; }
++.still-refs { display: flex; gap: 10px; flex-wrap: wrap; }
++.still-ref, .still-output { position: relative; margin: 0; width: 150px; }
++.still-ref img, .still-output img, .still-missing { display: block; width: 150px; height: 100px; object-fit: cover; border-radius: 10px; background: #2a2a2a; }
++.still-missing { display: grid; place-items: center; text-align: center; padding: 8px; box-sizing: border-box; }
++.still-index, .still-seq { position: absolute; top: 6px; left: 6px; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 999px; background: #111; color: #fff; display: grid; place-items: center; font-weight: 700; box-shadow: 0 0 0 2px #fff; }
++.still-seq:empty { display: none; }
++.still-ref figcaption, .still-output figcaption { display: grid; margin-top: 6px; }
++.still-ref.is-held img { outline: 2px solid #8a5a3a; }
++.still-compare button { background: #efe7d2; color: #1c1c1c; border: 0; border-radius: 999px; padding: 8px 14px; font: inherit; }
++.byte-check { font-family: ui-monospace, monospace; }
++@media (max-width: 720px) {
++  .still-cols { grid-template-columns: 1fr; }
++}
+diff -ruN a/still-refs.mjs b/still-refs.mjs
+--- a/still-refs.mjs
++++ b/still-refs.mjs
+@@ -0,0 +1,371 @@
++// Plans which still references will actually be sent.
++// Wire shapes follow this repo's image adapter and the observed canvas call.
++// Roles stay in the prompt text and the preview. They are not request fields.
++// This module never fetches. Callers may pass read() for a same-origin asset.
++
++import {presentSeq, seqText} from './seq-stamp.mjs';
++
++/** Verified in deploy/lib/images.mjs. Not taken from a third-party model card. */
++export const STILL_REF_CONTRACT = Object.freeze({
++  referenceLimit: 3,
++  referenceBytes: 768 * 1024,
++  mimes: Object.freeze(['image/png', 'image/jpeg', 'image/webp']),
++  imageReferenceKeys: Object.freeze(['id', 'dataUrl']),
++  stillBodyKeys: Object.freeze(['prompt', 'aspect', 'resolution', 'refs', 'projectId', 'projectName', 'name', 'entityKind', 'shotNo']),
++});
++
++const DATA_RE = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/]+={0,2})$/;
++const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
++const KNOWN_TYPE = new Set(['人物', '角色', '场景', '道具', '分镜']);
++const FRAME_NOTES = Object.freeze({
++  '9:16': 'Vertical 9:16 smartphone / short-drama frame, full-height composition, no letterboxing.',
++  '3:4': 'Portrait 3:4 frame, catalog still.',
++  '1:1': 'Square 1:1 frame.',
++  '16:9': 'Widescreen 16:9 cinematic frame.',
++});
++const PHOTO_LINE = 'Photoreal live-action cinematography. Real human skin and cloth. NEVER a 3D render, CGI mannequin, clay dummy, game-engine screenshot, untextured figure, or gray/beige capsule body.';
++
++export class StillRefError extends Error {
++  constructor(message, details = {}) {
++    super(message);
++    this.name = 'StillRefError';
++    this.details = details;
++  }
++}
++
++const clean = (value, max) => String(value ?? '').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').trim().slice(0, max);
++const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
++
++export function inspectDataUrl(value, maxBytes = STILL_REF_CONTRACT.referenceBytes) {
++  if (typeof value !== 'string' || !value.startsWith('data:')) return {ok: false, reason: 'not-data-url'};
++  if (value.length > Math.ceil(maxBytes / 3) * 4 + 64) return {ok: false, reason: 'too-large'};
++  const match = DATA_RE.exec(value);
++  if (!match || match[2].length % 4 !== 0) return {ok: false, reason: 'unsupported-image'};
++  const pad = match[2].endsWith('==') ? 2 : match[2].endsWith('=') ? 1 : 0;
++  const bytes = (match[2].length / 4) * 3 - pad;
++  if (!bytes || bytes > maxBytes) return {ok: false, reason: 'too-large'};
++  return {ok: true, dataUrl: value, mime: match[1], bytes};
++}
++
++function asRecord(ref) {
++  if (typeof ref === 'string') return {src: ref};
++  if (!ref || typeof ref !== 'object' || Array.isArray(ref)) return null;
++  return ref;
++}
++
++function labelOf(ref, index) {
++  const row = asRecord(ref);
++  if (!row) return `参考${index + 1}`;
++  return clean(row.name, 120) || clean(row.id, 80) || `参考${index + 1}`;
++}
++
++function roleOf(ref) {
++  const row = asRecord(ref);
++  if (!row) return '';
++  const role = clean(row.role, 40);
++  if (role) return role;
++  const type = clean(row.type, 40);
++  return KNOWN_TYPE.has(type) ? type : '';
++}
++
++function libraryIdOf(ref) {
++  const row = asRecord(ref);
++  if (!row) return '';
++  const candidates = [row.imageLibraryId, row.id];
++  for (const value of candidates) {
++    if (typeof value === 'string' && UUID.test(value)) return value.toLowerCase();
++  }
++  return '';
++}
++
++function sourceOf(ref) {
++  const row = asRecord(ref);
++  if (!row) return '';
++  if (typeof row.src === 'string' && row.src) return row.src;
++  if (typeof row.dataUrl === 'string' && row.dataUrl) return row.dataUrl;
++  return '';
++}
++
++function readableKind(src, origin) {
++  if (typeof src !== 'string' || !src || src.startsWith('data:')) return '';
++  if (src.startsWith('blob:')) return 'blob';
++  if (src.startsWith('/') && !src.startsWith('//') && !src.startsWith('/\\')) return 'path';
++  let url;
++  try { url = new URL(src); } catch { return ''; }
++  if (url.username || url.password || (url.protocol !== 'http:' && url.protocol !== 'https:')) return '';
++  if (typeof origin !== 'string' || !origin) return '';
++  let allowed;
++  try { allowed = new URL(origin); } catch { return ''; }
++  if ((allowed.protocol !== 'https:' && allowed.protocol !== 'http:') || allowed.origin !== url.origin) return '';
++  return 'same-origin';
++}
++
++function reasonText(reason, name) {
++  if (reason === 'too-large') return `参考图「${name}」超过 768KB，没有发送`;
++  if (reason === 'unsupported-image') return `参考图「${name}」不是 PNG、JPEG 或 WebP，没有发送`;
++  if (reason === 'remote') return `参考图「${name}」是外部地址。规划器不会去拉取，当前出图请求也只接受图片数据，没有发送`;
++  if (reason === 'unread') return `参考图「${name}」还不是图片数据。需要调用方读出后再发送；这次没有发送`;
++  if (reason === 'library-only') return `参考图「${name}」只有图库编号。当前这条出图请求只接受图片数据，没有发送`;
++  if (reason === 'empty') return `参考图「${name}」没有可读的图片，没有发送`;
++  if (reason === 'bad-read') return `参考图「${name}」读出来仍不是可用图片，没有发送`;
++  return `参考图「${name}」无法发送`;
++}
++
++function resolveLimit(options, wire) {
++  const verified = STILL_REF_CONTRACT.referenceLimit;
++  if (options.limit == null) return {limit: verified, note: ''};
++  const requested = options.limit;
++  if (!Number.isInteger(requested) || requested < 1) throw new StillRefError('参考张数上限无法识别，没有发送', {code: 'bad-limit'});
++  if (wire === 'images' && requested !== verified) {
++    throw new StillRefError('图片接口最多 3 张参考图。多出来的不会悄悄丢掉，请先减少后再试。', {code: 'images-limit'});
++  }
++  const note = requested > verified
++    ? `调用方上限是 ${requested} 张。本仓库 /api/images 最多 ${verified} 张。/api/pianchang-still 不在本仓库，超过 ${verified} 张没有被这个仓库验证。`
++    : '';
++  return {limit: requested, note};
++}
++
++function overLimitError(list, limit) {
++  const dropped = list.slice(limit).map((ref, offset) => labelOf(ref, limit + offset));
++  const kept = list.slice(0, limit).map(labelOf);
++  return new StillRefError(
++    `参考图有 ${list.length} 张，当前上限是 ${limit} 张。不会只发送前 ${limit} 张。请先拿掉：${dropped.join('、')}。按原顺序仍想保留的是：${kept.join('、') || '无'}。`,
++    {code: 'over-limit', dropped, kept},
++  );
++}
++
++function promptLine(item, ref) {
++  const lines = [`<IMAGE_${item.index}> ${item.name}${item.role ? `（${item.role}）` : ''}`];
++  const row = asRecord(ref) || {};
++  if (item.role === 'stage_frame') {
++    lines.push(`IMAGE_${item.index} is this shot's white-stage camera frame: keep its camera position, framing and blocking; paint it as photoreal live action.`);
++    lines.push(`Fuse uploaded reference <IMAGE_${item.index}> into this still for identity and style.`);
++    return lines;
++  }
++  if (item.role === '人物' || item.role === '角色' || item.role === 'character') {
++    const look = clean(row.appearance || row.description, 500);
++    const costume = clean(row.costume, 500);
++    lines.push([look && `外貌：${look}`, `wardrobe: ${costume}`].filter(Boolean).join(' '));
++    lines.push(`Match the face, hair, glasses, and costume of <IMAGE_${item.index}> exactly. Change only camera angle or micro-expression. Still exactly one person. Same gray backdrop and lighting.`);
++  } else if (item.role === '道具' || item.role === 'prop') {
++    const material = clean(row.material, 300);
++    const used = clean(row.used_by || row.usedBy, 120);
++    lines.push(`Studio product still of a film prop: ${item.name}. ${clean(row.description, 500)}. Material and wear: ${material}. Used by ${used}.`);
++  } else if (item.role === '场景' || item.role === 'location') {
++    lines.push(`Location: ${item.name}.`);
++  }
++  return lines;
++}
++
++function buildNotes(items, refs, ratio) {
++  const notes = [];
++  items.forEach((item, index) => notes.push(...promptLine(item, refs[index])));
++  if (items.length >= 2) notes.push(`Use reference images: <IMAGE_0> to <IMAGE_${items.length - 1}> for identity of people, place, and props.`);
++  if (items.some(item => item.role === 'stage_frame')) notes.push(PHOTO_LINE);
++  const frame = FRAME_NOTES[ratio] || '';
++  if (frame) notes.push(frame);
++  return notes;
++}
++
++function baseItem(ref, index, extra) {
++  return {
++    index,
++    name: labelOf(ref, index),
++    role: roleOf(ref),
++    previewSrc: '',
++    dataUrl: '',
++    libraryId: '',
++    ...extra,
++  };
++}
++
++function classifyOne(ref, index, options, wire) {
++  if (asRecord(ref) == null) {
++    return {item: baseItem(ref, index, {state: 'blocked', reason: 'empty'}), blocked: reasonText('empty', labelOf(ref, index))};
++  }
++  const name = labelOf(ref, index);
++  const src = sourceOf(ref);
++  const libraryId = libraryIdOf(ref);
++  if (src.startsWith('data:')) {
++    const inspected = inspectDataUrl(src);
++    if (!inspected.ok) return {item: baseItem(ref, index, {state: 'blocked', reason: inspected.reason}), blocked: reasonText(inspected.reason, name)};
++    if (wire === 'images' && libraryId) {
++      return {item: baseItem(ref, index, {state: 'blocked', reason: 'ambiguous'}), blocked: `参考图「${name}」同时有图库编号和图片数据，没有替你选择，请只保留一种`};
++    }
++    return {item: baseItem(ref, index, {state: 'ready', previewSrc: inspected.dataUrl, dataUrl: inspected.dataUrl})};
++  }
++  if (wire === 'images' && libraryId && !src) {
++    return {item: baseItem(ref, index, {state: 'ready', libraryId})};
++  }
++  if (!src && libraryId && wire === 'still') {
++    return {item: baseItem(ref, index, {state: 'blocked', reason: 'library-only'}), blocked: reasonText('library-only', name)};
++  }
++  if (!src) return {item: baseItem(ref, index, {state: 'blocked', reason: 'empty'}), blocked: reasonText('empty', name)};
++  const kind = readableKind(src, options.origin);
++  if (!kind) return {item: baseItem(ref, index, {state: 'blocked', reason: 'remote'}), blocked: reasonText('remote', name)};
++  return {item: baseItem(ref, index, {state: 'unread', reason: 'unread', readKind: kind}), blocked: options.read ? '' : reasonText('unread', name)};
++}
++
++function imageWireItem(item) {
++  if (item.libraryId) return {id: item.libraryId};
++  return {dataUrl: item.dataUrl};
++}
++
++function finish(wire, limit, items, refs, options, diagnostics, error) {
++  const exact = !error && items.length === refs.length && items.every(item => item.state === 'ready');
++  for (const item of items) item.sentAs = wire === 'images' && item.libraryId ? 'id' : item.dataUrl ? 'dataUrl' : '';
++  return {
++    ok: exact,
++    exact,
++    wire,
++    limit,
++    items,
++    promptNotes: exact ? buildNotes(items, refs, options.ratio || '') : [],
++    diagnostics: diagnostics.filter(Boolean),
++    error: error || '',
++    ...(wire === 'still' ? {stillRefs: exact ? items.map(item => item.dataUrl) : []} : {}),
++    ...(wire === 'images' ? {imageReferences: exact ? items.map(imageWireItem) : []} : {}),
++  };
++}
++
++export function classifyStillReferences(refs, options = {}) {
++  const wire = options.wire === 'images' ? 'images' : options.wire === 'still' ? 'still' : '';
++  if (!wire) return finish('still', STILL_REF_CONTRACT.referenceLimit, [], [], options, [], '未指定出图请求种类，没有发送');
++  let limitNote = '';
++  try {
++    const resolved = resolveLimit(options, wire);
++    limitNote = resolved.note;
++    const list = Array.isArray(refs) ? refs : null;
++    if (!list) return finish(wire, resolved.limit, [], [], options, [limitNote], '参考图列表无效，没有发送');
++    if (list.length > resolved.limit) {
++      const items = list.map((ref, index) => baseItem(ref, index, {state: index < resolved.limit ? 'not-sent' : 'over-cap'}));
++      return finish(wire, resolved.limit, items, list, options, [limitNote], overLimitError(list, resolved.limit).message);
++    }
++    const items = [];
++    const problems = [];
++    for (let index = 0; index < list.length; index++) {
++      const one = classifyOne(list[index], index, options, wire);
++      items.push(one.item);
++      if (one.blocked) problems.push(one.blocked);
++    }
++    const pending = items.some(item => item.state === 'unread');
++    const error = problems[0] || (pending ? '还有参考图没读成图片数据，不能把它算作即将发送' : '');
++    return finish(wire, resolved.limit, items, list, options, [limitNote], error);
++  } catch (error) {
++    return finish(wire, STILL_REF_CONTRACT.referenceLimit, [], [], options, [limitNote], error.message || '参考图没有发出去');
++  }
++}
++
++async function resolveRead(ref, index, options, wire) {
++  const first = classifyOne(ref, index, {...options, read: true}, wire);
++  if (first.item.state !== 'unread') {
++    if (first.blocked) throw new StillRefError(first.blocked, {code: first.item.reason || 'blocked', index, name: first.item.name});
++    return first.item;
++  }
++  if (typeof options.read !== 'function') throw new StillRefError(reasonText('unread', first.item.name), {code: 'unread', index, name: first.item.name});
++  let value = '';
++  try { value = await options.read(ref, index); }
++  catch (error) { throw new StillRefError(`参考图「${first.item.name}」读取失败：${error?.message || '读不出来'}。没有发送`, {code: 'read-failed', index, name: first.item.name}); }
++  const inspected = inspectDataUrl(typeof value === 'string' ? value : '');
++  if (!inspected.ok) throw new StillRefError(reasonText('bad-read', first.item.name), {code: 'bad-read', index, name: first.item.name});
++  if (wire === 'images' && libraryIdOf(ref)) {
++    throw new StillRefError(`参考图「${first.item.name}」读出了图片数据，本身又有图库编号，没有替你选择，请只保留一种`, {code: 'ambiguous', index, name: first.item.name});
++  }
++  return baseItem(ref, index, {state: 'ready', previewSrc: inspected.dataUrl, dataUrl: inspected.dataUrl});
++}
++
++export async function planStillReferences(refs, options = {}) {
++  const wire = options.wire === 'images' ? 'images' : options.wire === 'still' ? 'still' : '';
++  if (!wire) throw new StillRefError('未指定出图请求种类，没有发送', {code: 'wire'});
++  const {limit, note} = resolveLimit(options, wire);
++  if (!Array.isArray(refs)) throw new StillRefError('参考图列表无效，没有发送', {code: 'refs'});
++  if (refs.length > limit) throw overLimitError(refs, limit);
++  const items = [];
++  for (let index = 0; index < refs.length; index++) items.push(await resolveRead(refs[index], index, options, wire));
++  const plan = finish(wire, limit, items, refs, options, [note], '');
++  if (!plan.ok) throw new StillRefError(plan.error || '参考图没有发出去', {code: 'plan'});
++  return plan;
++}
++
++export function appendRefPrompt(prompt, plan) {
++  const notes = Array.isArray(plan) ? plan : plan?.promptNotes || [];
++  return [String(prompt ?? '').trim(), ...notes].filter(Boolean).join('\n');
++}
++
++/** Body fields already sent by the live canvas. No role, seed, or extra key. */
++export function stillRequestBody({prompt, ratio, plan, meta} = {}) {
++  if (!plan?.ok || plan.wire !== 'still' || !Array.isArray(plan.stillRefs)) throw new StillRefError('参考图还不能发送', {code: 'body'});
++  const extra = meta && typeof meta === 'object' ? meta : {};
++  const body = {
++    prompt: typeof prompt === 'string' ? prompt : '',
++    aspect: ratio || '16:9',
++    resolution: '1k',
++    refs: plan.stillRefs.slice(),
++    projectId: extra.projectId || '',
++    projectName: extra.projectName || '',
++    name: extra.name || '',
++    entityKind: extra.entityKind || '',
++    shotNo: extra.shotNo || '',
++  };
++  for (const key of Object.keys(body)) {
++    if (!STILL_REF_CONTRACT.stillBodyKeys.includes(key)) delete body[key];
++  }
++  return body;
++}
++
++export function createStillRun() {
++  return {status: 'idle', output: '', held: '', error: '', seqLabel: '', attempt: 0};
++}
++
++export function beginAttempt(run, sent = []) {
++  if (!run || run.status === 'running') throw new StillRefError('这一张还在生成，没有再次提交', {code: 'busy'});
++  const kept = run.output || run.held || '';
++  return {...run, status: 'running', error: '', attempt: (Number(run.attempt) || 0) + 1, held: kept, output: kept, seqLabel: run.seqLabel || '', sent};
++}
++
++export function failAttempt(run, error) {
++  if (!run || run.status !== 'running') throw new StillRefError('没有进行中的生成，不能记成失败', {code: 'not-running'});
++  const output = run.held || run.output || '';
++  return {...run, status: 'failed', error: String(error?.message || error || '出图失败'), output, held: output, seqLabel: output ? (run.seqLabel || '') : ''};
++}
++
++export function finishAttempt(run, dataUrl, seqLabel) {
++  if (!run || run.status !== 'running') throw new StillRefError('没有进行中的生成', {code: 'not-running'});
++  const shown = presentSeq(dataUrl, seqLabel);
++  if (!shown.dataUrl || shown.dataUrl !== dataUrl) throw new StillRefError('出图结果不能盖章或改写', {code: 'stamp'});
++  return {...run, status: 'done', error: '', output: shown.dataUrl, held: shown.dataUrl, seqLabel: shown.seqLabel};
++}
++
++const STATUS_TEXT = {idle: '还没生成', running: '生成中', failed: '失败，可以重试', done: '已完成'};
++
++function thumb(item, exact) {
++  const badge = `<span class="still-index" aria-hidden="true">${item.index + 1}</span>`;
++  const how = !exact ? '<small>这次不会发送</small>' : item.sentAs === 'id' ? `<small>请求只带图库编号 ${esc(item.libraryId)}</small>` : item.sentAs === 'dataUrl' ? '<small>请求带这张图片数据</small>' : '';
++  const caption = `<figcaption><b>${esc(item.name)}</b>${item.role ? `<small>${esc(item.role)}</small>` : ''}${how}</figcaption>`;
++  if (item.previewSrc) return `<figure class="still-ref${exact ? '' : ' is-held'}" data-still-ref="${item.index}" data-still-state="${esc(item.state)}">${badge}<img src="${esc(item.previewSrc)}" alt="${exact ? '将发送的参考' : '未发送的参考'} ${item.index + 1} ${esc(item.name)}">${caption}</figure>`;
++  const pending = item.state === 'unread' ? '还没读成图片数据' : item.state === 'over-cap' ? '超出上限，不会发送' : !exact ? '这次不会发送' : item.libraryId ? '按图库编号发送' : '不会发送';
++  return `<figure class="still-ref is-empty" data-still-ref="${item.index}" data-still-state="${esc(item.state || 'blocked')}">${badge}<span class="still-missing">${esc(pending)}</span>${caption}</figure>`;
++}
++
++export function renderStillCompare({plan, run, title = '将发送的参考图', retryAct = ''} = {}) {
++  const view = run || createStillRun();
++  const items = Array.isArray(plan?.items) ? plan.items : [];
++  const exact = !!plan?.exact;
++  const banner = plan?.error
++    ? plan.error
++    : exact
++      ? `将发送 ${items.length} 张，顺序如下`
++      : '还不能确定将发送的图片';
++  const status = STATUS_TEXT[view.status] || STATUS_TEXT.idle;
++  const output = view.output || '';
++  const seq = seqText(view.seqLabel);
++  const outputFigure = output
++    ? `<figure class="still-output" data-still-output><img src="${esc(output)}" alt="生成结果"><span class="still-seq">${seq ? esc(seq) : ''}</span><figcaption>${view.status === 'done' ? '这一张结果' : '上一张结果还在'}</figcaption></figure>`
++    : `<figure class="still-output is-empty" data-still-output><span class="still-missing">还没有结果</span><figcaption>输出</figcaption></figure>`;
++  const retry = view.status === 'failed' ? `<button type="button" data-still-act="retry"${retryAct ? ` data-act="${esc(retryAct)}"` : ''}>用同一批参考重试</button>` : '';
++  const notes = (plan?.diagnostics || []).filter(Boolean).map(line => `<p class="still-note">${esc(line)}</p>`).join('');
++  const error = view.error ? `<p class="still-error" role="alert">${esc(view.error)}</p>` : '';
++  return `<section class="still-compare" data-still-status="${esc(view.status)}" data-still-exact="${exact ? 'yes' : 'no'}"><div class="still-head"><h3>${esc(title)}</h3><p data-still-banner>${esc(banner)}</p><p class="still-status">状态：${esc(status)}${view.attempt ? ` · 第 ${view.attempt} 次` : ''}</p></div><div class="still-cols"><div class="still-refs">${items.map(item => thumb(item, exact)).join('') || '<p class="still-missing">这次不带参考图</p>'}</div>${outputFigure}</div>${notes}${error}${retry}<p class="still-footnote">编号只显示在角标上，没有写进图片。</p></section>`;
++}
++
++export {seqText, presentSeq};

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>参考图发送预览 · 样例</title>
+  <link rel="stylesheet" href="still-preview.css">
+</head>
+<body class="still-demo">
+  <main>
+    <h1>参考图发送预览</h1>
+    <p class="banner">这是带字样的色块样例，不调用出图、不读取密钥、不改项目文件。编号画在角标上。下面的输出图是另一块纯色，文件里没有写编号。</p>
+    <div id="demo">正在准备样例…</div>
+  </main>
+  <script type="module">
+    import {mount} from './still-preview-fixture.mjs';
+    mount(document.querySelector('#demo'));
+  </script>
+</body>
+</html>
