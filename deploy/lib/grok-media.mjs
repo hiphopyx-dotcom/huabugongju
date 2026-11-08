@@ -2,6 +2,8 @@ import {AccountError,allowBearerOrigin} from './security.mjs';
 
 const ASPECTS=new Set(['16:9','9:16','1:1','4:3','3:2','2:3']);
 const MAX_VIDEO_BYTES=40*1024*1024;
+const STILL_CHARS=4500000;
+const STILL_RE=/^data:image\/(png|jpeg|webp)(?:;[^,]*)?,/;
 const NO_STORE={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
 const json=(value,status=200)=>Response.json(value,{status,headers:NO_STORE});
 
@@ -24,6 +26,30 @@ async function readError(response){
  const text=await response.text();
  return text.slice(0,180);
 }
+function stillUrl(value,label){
+ if(typeof value!=='string'||!STILL_RE.test(value))return {error:label+'不是 PNG、JPEG 或 WebP'};
+ if(value.length>STILL_CHARS)return {error:label+'太大，请换一张较小的图'};
+ return {url:value};
+}
+function referenceImagesOf(body){
+ if(!body||typeof body!=='object'||!Object.hasOwn(body,'reference_images'))return {urls:[]};
+ const list=body.reference_images;
+ if(!Array.isArray(list))return {error:'参考图必须是数组'};
+ if(list.length>3)return {error:'参考图[3]超出最多 3 张'};
+ const urls=[];
+ for(let i=0;i<list.length;i++){
+  const item=stillUrl(list[i],'参考图['+i+']');
+  if(item.error)return item;
+  urls.push(item.url);
+ }
+ return {urls};
+}
+function lastFrameOf(body){
+ if(!body||typeof body!=='object'||!Object.hasOwn(body,'last_frame'))return {url:''};
+ const frame=stillUrl(body.last_frame,'尾帧');
+ if(frame.error)return frame;
+ return {url:frame.url};
+}
 
 export function createGrokVideoHandler(env=process.env){
  return async function handler(req){
@@ -40,8 +66,14 @@ export function createGrokVideoHandler(env=process.env){
     const aspect=ASPECTS.has(String(body?.aspect||''))?String(body.aspect):'16:9';
     const image=typeof body?.image==='string'&&body.image.startsWith('data:image/')?body.image:'';
     if(image.length>4500000)return json({ok:false,error:'首帧太大，请换一张较小的图'},400);
+    const references=referenceImagesOf(body);
+    if(references.error)return json({ok:false,error:references.error},400);
+    const lastFrame=lastFrameOf(body);
+    if(lastFrame.error)return json({ok:false,error:lastFrame.error},400);
     const payload={model:env.XAI_VIDEO_MODEL||env.AI_VIDEO_MODEL||'grok-imagine-video-1.5',prompt,duration,aspect_ratio:aspect,resolution:'720p'};
     if(image)payload.image={url:image};
+    if(lastFrame.url)payload.last_frame={url:lastFrame.url};
+    if(references.urls.length)payload.reference_images=references.urls.map(url=>({url}));
     const response=await fetch(base+'/videos/generations',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify(payload)});
     if(!response.ok)return json({ok:false,error:'出视频失败（'+response.status+'）'+await readError(response)},502);
     const started=await response.json();
