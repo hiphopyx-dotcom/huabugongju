@@ -110,3 +110,7 @@
 自动测试覆盖空路线、单点、越界、过短手绘、时长、速度、反向、暂停后时间不走、播完再播、JSON 往返、metadata 只改 `lineCamera`、boot 不强制重新启用，以及 `register` 不调用 `ctx.ai`。
 
 隔离页用 Chrome 打开 `harness.html`，走绘制、拖点、改时长、暂停、保存、重开、静帧和路线重载。这个页面不是本机 MuseCanvas 0.23.3，也没有加载 `index-jubaopeng-v3.js`。WebM 是否真正写出取决于该浏览器的 `MediaRecorder`；失败时静帧和 JSON 仍然可用，结果里会单独写明。
+
+## 和 zinc 测试站不是一回事
+
+`register(runtime)` 只对应本机 MuseCanvas。`zinc-raven-rocket-drift.grok.me` 上现在的片场是另一套 React 打包结果，本仓库没有它的源码，不能把这个插件说成 zinc 已支持。核对记录和还缺的宿主契约在 `docs/line-camera-zinc.md`。
