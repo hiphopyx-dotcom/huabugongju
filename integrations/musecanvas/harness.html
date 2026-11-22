@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>线控运镜隔离测试</title>
+  <style>
+    body{margin:0;font:15px/1.45 sans-serif;background:#101820;color:#e8eef5}
+    main{display:grid;grid-template-columns:260px 1fr;gap:16px;padding:16px}
+    aside,section{background:#18222d;border:1px solid #314154;border-radius:12px;padding:12px}
+    button{font:inherit;margin:4px 4px 0 0}
+    #probe{white-space:pre-wrap}
+    @media(max-width:800px){main{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <main>
+    <aside>
+      <h1>隔离测试</h1>
+      <p>这个页面只加载线控运镜插件和一份测试 runtime。它不是本机 MuseCanvas，也没有加载 index-jubaopeng-v3.js。</p>
+      <div id="card"></div>
+      <p><button id="reopen" type="button">关闭并重开面板</button></p>
+      <p id="probe"></p>
+    </aside>
+    <section id="panel"></section>
+  </main>
+  <script type="module">
+    const node = {id: 'node-line-1', type: 'jubaopeng-line-camera', metadata: {title: '保留我', note: '旧字段'}};
+    const calls = {ai: 0, ops: 0, upstream: 0};
+    const picture = document.createElement('canvas');
+    picture.width = 320; picture.height = 180;
+    const pen = picture.getContext('2d');
+    pen.fillStyle = '#f6f1e8'; pen.fillRect(0, 0, 320, 180);
+    pen.fillStyle = '#7f97ab'; pen.fillRect(36, 28, 70, 120);
+    pen.fillStyle = '#d9c3a1'; pen.fillRect(150, 70, 120, 78);
+    pen.fillStyle = '#355f86'; pen.fillRect(180, 28, 90, 28);
+    const imageSrc = picture.toDataURL('image/png');
+
+    function createHooks() {
+      let hooks = [];
+      let index = 0;
+      const pending = [];
+      return {
+        begin() { index = 0; },
+        useState(initial) {
+          const slot = hooks[index] || (hooks[index] = {state: typeof initial === 'function' ? initial() : initial});
+          index += 1;
+          return [slot.state, () => {}];
+        },
+        useRef(initial) {
+          const slot = hooks[index] || (hooks[index] = {current: initial});
+          index += 1;
+          return slot;
+        },
+        useEffect(fn, deps) {
+          const slot = hooks[index] || (hooks[index] = {});
+          const changed = !slot.deps || !deps || deps.some((item, i) => item !== slot.deps[i]);
+          index += 1;
+          if (changed) pending.push(() => { slot.cleanup?.(); const cleanup = fn(); slot.cleanup = typeof cleanup === 'function' ? cleanup : null; slot.deps = deps; });
+        },
+        flush() { pending.splice(0).forEach(fn => fn()); },
+        cleanup() { hooks.forEach(slot => slot.cleanup?.()); hooks = []; }
+      };
+    }
+
+    function renderNode(vnode, parent) {
+      if (vnode == null || vnode === false) return;
+      if (Array.isArray(vnode)) { vnode.forEach(child => renderNode(child, parent)); return; }
+      if (typeof vnode === 'string' || typeof vnode === 'number') { parent.appendChild(document.createTextNode(String(vnode))); return; }
+      const el = document.createElement(vnode.type);
+      const props = vnode.props || {};
+      for (const [key, value] of Object.entries(props)) {
+        if (key === 'children' || key === 'ref' || value == null) continue;
+        if (key === 'className') el.className = value;
+        else if (key === 'hidden') el.hidden = Boolean(value);
+        else if (key.startsWith('on') && typeof value === 'function') el.addEventListener(key.slice(2).toLowerCase(), value);
+        else el.setAttribute(key, value === true ? '' : String(value));
+      }
+      if (props.ref) props.ref.current = el;
+      const children = Array.isArray(props.children) ? props.children : props.children != null ? [props.children] : [];
+      children.forEach(child => renderNode(child, el));
+      parent.appendChild(el);
+    }
+
+    let hooks = createHooks();
+    let registered;
+    const runtime = {
+      version: 'harness',
+      React: {},
+      jsx(type, props) { return {type, props: props || {}}; },
+      Fragment: 'fragment',
+      injectCSS(css) {
+        let style = document.querySelector('#runtime-css');
+        if (!style) { style = document.createElement('style'); style.id = 'runtime-css'; document.head.appendChild(style); }
+        style.textContent = css;
+      },
+      emit() { throw Error('隔离页不发送事件'); },
+      on() { throw Error('隔离页不订阅事件'); }
+    };
+    function bindReact() { runtime.React = {useState: hooks.useState, useRef: hooks.useRef, useEffect: hooks.useEffect}; }
+    bindReact();
+    const ctx = {
+      node,
+      updateMetadata(patch) {
+        node.metadata = {...node.metadata, ...patch};
+        renderCard();
+      },
+      getUpstream() { calls.upstream += 1; return [{id: 'image-1', metadata: {src: imageSrc}}]; },
+      getNodes() { return [node, {id: 'old-node', metadata: {title: '旧节点'}}]; },
+      applyOps() { calls.ops += 1; throw Error('不应改动其他节点'); },
+      ai() { calls.ai += 1; throw Error('未授权生成'); },
+      openPanel() { document.querySelector('#panel').scrollIntoView(); }
+    };
+    function renderCard() {
+      const card = document.querySelector('#card');
+      card.replaceChildren();
+      renderNode(registered.nodes[0].Content(ctx), card);
+    }
+    function mountPanel() {
+      const panel = document.querySelector('#panel');
+      panel.replaceChildren();
+      hooks.begin();
+      renderNode(registered.nodes[0].Panel(ctx), panel);
+      hooks.flush();
+    }
+    function reopen() {
+      hooks.cleanup();
+      hooks = createHooks();
+      bindReact();
+      mountPanel();
+      renderCard();
+      const count = node.metadata.lineCamera?.imageStroke?.points?.length || 0;
+      document.querySelector('#probe').textContent = `已重开。图像点 ${count}。title=${node.metadata.title}。ai=${calls.ai}。applyOps=${calls.ops}`;
+    }
+    window.InfiniteCanvasRuntime = runtime;
+    const plugin = await import('./plugins/jubaopeng-line-camera.js');
+    registered = plugin.default(runtime);
+    renderCard();
+    mountPanel();
+    document.querySelector('#reopen').addEventListener('click', reopen);
+    window.__lineCameraHarness = {node, calls, registered, reopen};
+  </script>
+</body>
+</html>

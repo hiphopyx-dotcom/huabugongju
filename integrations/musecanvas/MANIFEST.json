@@ -1,0 +1,26 @@
+{
+  "id": "jubaopeng-line-camera",
+  "version": "1.0.0",
+  "replacesMainBundle": false,
+  "callsModel": false,
+  "files": [
+    "integrations/musecanvas/plugins/line-camera-core.mjs",
+    "integrations/musecanvas/plugins/line-camera-preview.mjs",
+    "integrations/musecanvas/plugins/line-camera-editor.mjs",
+    "integrations/musecanvas/plugins/jubaopeng-line-camera.js",
+    "integrations/musecanvas/plugins/jubaopeng-line-camera-boot.js",
+    "integrations/musecanvas/harness.html",
+    "docs/line-camera.md"
+  ],
+  "copyIntoHostPlugins": [
+    "line-camera-core.mjs",
+    "line-camera-preview.mjs",
+    "line-camera-editor.mjs",
+    "jubaopeng-line-camera.js",
+    "jubaopeng-line-camera-boot.js"
+  ],
+  "indexJsonAppend": "/plugins/jubaopeng-line-camera.js",
+  "bootScript": "/plugins/jubaopeng-line-camera-boot.js",
+  "storageKey": "infinite-canvas:plugin_store",
+  "nodeType": "jubaopeng-line-camera"
+}
